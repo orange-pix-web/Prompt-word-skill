@@ -1,0 +1,4 @@
+node_modules/
+.prompt-ui/
+*.log
+.DS_Store

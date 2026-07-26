@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f26a21">
+  <title>牧德旺主图工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">牧</div>
+        <div>
+          <strong>主图工作台</strong>
+          <span>Prompt Studio</span>
+        </div>
+      </div>
+      <nav id="nav">
+        <button class="nav-item active" data-view="products"><span>◫</span>产品管理</button>
+        <button class="nav-item" data-view="templates"><span>◇</span>模板中心</button>
+        <button class="nav-item" data-view="generate"><span>✦</span>提示词生成</button>
+        <button class="nav-item" data-view="references"><span>◎</span>参考图分析</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="status-dot"></span>
+        <div><strong>本地模式</strong><small>数据不会上传到外网</small></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">MU DEWANG · CREATIVE OPERATIONS</p>
+          <h1 id="page-title">产品管理</h1>
+        </div>
+        <div class="top-actions">
+          <span class="data-root" id="data-root">正在连接项目…</span>
+          <button class="btn ghost" id="refresh-btn">刷新数据</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-products">
+        <div class="metric-grid" id="metrics"></div>
+        <div class="toolbar">
+          <div class="search-wrap"><span>⌕</span><input id="product-search" placeholder="搜索产品名称或标签"></div>
+          <div class="filter-chips" id="category-filters"></div>
+          <div class="toolbar-spacer"></div>
+          <button class="btn ghost" id="new-category-btn">＋ 新建分类</button>
+          <button class="btn primary" id="new-product-btn">＋ 添加产品</button>
+        </div>
+        <div class="selection-bar" id="product-selection-bar">
+          <label><input type="checkbox" id="select-all-products"> 全选当前结果</label>
+          <span id="selected-product-count">已选 0 个</span>
+          <button class="btn small" id="go-generate-products">用所选产品生成</button>
+        </div>
+        <div class="product-grid" id="product-grid"></div>
+      </section>
+
+      <section class="view" id="view-templates">
+        <div class="section-head">
+          <div><h2>模板中心</h2><p>构图、文字层级和底栏规则独立管理，预览不会消耗生图额度。</p></div>
+          <button class="btn primary" id="new-template-btn">＋ 添加模板</button>
+        </div>
+        <div class="template-grid" id="template-grid"></div>
+      </section>
+
+      <section class="view" id="view-generate">
+        <div class="generator-layout">
+          <div class="panel">
+            <div class="panel-head"><div><span class="step">01</span><h2>选择产品</h2></div><button class="text-btn" id="generate-select-products">全选</button></div>
+            <div class="compact-search"><input id="generate-product-search" placeholder="筛选产品"></div>
+            <div class="check-list" id="generate-products"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><span class="step">02</span><h2>选择模板</h2></div><button class="text-btn" id="generate-select-templates">选择已启用</button></div>
+            <div class="check-list template-check-list" id="generate-templates"></div>
+          </div>
+          <div class="panel summary-panel">
+            <div class="panel-head"><div><span class="step">03</span><h2>确认生成</h2></div></div>
+            <div class="generation-summary">
+              <div><strong id="summary-products">0</strong><span>产品</span></div>
+              <i>×</i>
+              <div><strong id="summary-templates">0</strong><span>模板</span></div>
+              <i>=</i>
+              <div class="accent"><strong id="summary-total">0</strong><span>条提示词</span></div>
+            </div>
+            <div class="summary-note">提示词会保存到对应产品分类文件夹，自动增加版本号，不覆盖历史文件。</div>
+            <button class="btn primary large" id="generate-btn">生成所选提示词</button>
+            <div class="result-box" id="generation-result">等待选择产品和模板</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-references">
+        <div class="reference-hero">
+          <div>
+            <p class="eyebrow">REFERENCE TO TEMPLATE</p>
+            <h2>从参考图创建模板草稿</h2>
+            <p>导入参考图后保存到“参考图/待分析”。未配置视觉模型时生成可编辑布局草稿；配置后可自动提取构图信息。</p>
+          </div>
+          <div class="ai-state" id="ai-state">检测分析能力…</div>
+        </div>
+        <div class="reference-workspace">
+          <label class="drop-zone" id="reference-drop">
+            <input type="file" id="reference-file" accept="image/png,image/jpeg,image/webp">
+            <span class="upload-icon">⇧</span>
+            <strong>选择或拖入一张参考图</strong>
+            <small>PNG、JPG、WEBP，最多20MB</small>
+            <img id="reference-preview" alt="">
+          </label>
+          <div class="reference-form">
+            <label>建议模板编号<input id="reference-number" value="10" maxlength="2"></label>
+            <label>模板名称<input id="reference-name" value="新参考模板"></label>
+            <button class="btn primary" id="analyze-reference-btn">导入并分析</button>
+            <div class="analysis-output" id="analysis-output">分析结果会显示在这里，并可一键带入模板编辑器。</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="product-dialog">
+    <form method="dialog" class="dialog-card" id="product-form">
+      <div class="dialog-head"><div><p class="eyebrow">NEW PRODUCT</p><h2>添加产品</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="form-grid">
+        <label class="wide">产品图片<input type="file" id="product-file" accept="image/png,image/jpeg,image/webp" required></label>
+        <label>产品名称<input id="product-name" required></label>
+        <label>所属分类<select id="product-category"></select></label>
+        <label>净含量<input id="product-net" placeholder="例如 100g" required></label>
+        <label>包装形态<select id="product-form-type"><option value="bag">袋装</option><option value="liquid">瓶装液体</option><option value="tablet">片状</option><option value="other">其他</option></select></label>
+        <label class="wide">标签<input id="product-tags" placeholder="多个标签用逗号分隔"></label>
+      </div>
+      <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-product-btn">保存产品</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="template-dialog">
+    <form method="dialog" class="dialog-card wide-dialog" id="template-form">
+      <div class="dialog-head"><div><p class="eyebrow">LAYOUT BLUEPRINT</p><h2 id="template-dialog-title">编辑模板</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="template-editor">
+        <div class="form-grid">
+          <label>模板编号<input id="tpl-number" maxlength="2" required></label>
+          <label>模板名称<input id="tpl-name" required></label>
+          <label>副标题来源<select id="tpl-subtitle"><option>副标题</option><option>辅助文案</option><option>自动用量</option><option>无</option></select></label>
+          <label>卖点数量<select id="tpl-points"><option value="3">3</option><option value="0">0</option></select></label>
+          <label>底栏来源<select id="tpl-bottom-source"><option>底栏文案</option><option>辅助文案+底栏文案</option><option>自动用量</option></select></label>
+          <label>底栏样式<select id="tpl-bottom-style"><option>标准单行</option><option>醒目单行</option><option>加高单行</option><option>双行</option></select></label>
+          <label>净含量位置<select id="tpl-net"><option>产品附近</option><option>右侧空白区</option></select></label>
+          <label class="toggle-label">默认启用<input type="checkbox" id="tpl-enabled"><span class="switch"></span></label>
+          <label class="wide">构图描述<textarea id="tpl-layout" rows="5" required></textarea></label>
+          <label class="wide">特殊要求<textarea id="tpl-special" rows="3">无</textarea></label>
+        </div>
+        <div class="live-preview" id="live-preview"></div>
+      </div>
+      <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="product-detail-dialog">
+    <div class="dialog-card product-detail-card">
+      <div class="dialog-head"><div><p class="eyebrow">PRODUCT DETAILS</p><h2 id="detail-name"></h2></div><button class="icon-btn" id="close-detail">×</button></div>
+      <div class="detail-layout">
+        <img id="detail-image" alt="">
+        <div class="detail-fields">
+          <label>分类<select id="detail-category"></select></label>
+          <label>净含量<input id="detail-net"></label>
+          <label>包装形态<select id="detail-form"><option value="bag">袋装</option><option value="liquid">瓶装液体</option><option value="tablet">片状</option><option value="other">其他</option></select></label>
+          <label>标签<input id="detail-tags" placeholder="用逗号分隔"></label>
+          <div class="prompt-status" id="detail-prompt"></div>
+          <button class="btn primary" id="save-detail">保存资料</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
