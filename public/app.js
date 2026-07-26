@@ -9,6 +9,10 @@ const state = {
   editingVisualLayout: null,
   selectedLayoutElement: null,
   drawingLayoutElement: null,
+  previewCategory: null,
+  previewProduct: null,
+  editingMarketingKey: null,
+  marketingDraft: null,
   referenceFile: null,
   referenceDimensions: null,
   detailProduct: null,
@@ -189,6 +193,33 @@ function layoutElementLabel(key, box = {}) {
   return box.label || layoutElementLabels()[key] || elementDefinitions().find(([type]) => type === box.type)?.[1] || key;
 }
 
+function currentPreviewCopy() {
+  const category = state.previewCategory || state.data?.categories?.[0];
+  const number = $("#tpl-number")?.value?.trim().padStart(2, "0");
+  return state.data?.marketingRows?.find((row) => row.category === category && row.number === number) || null;
+}
+
+function currentPreviewProduct() {
+  const products = state.data?.products?.filter((item) => item.category === state.previewCategory) || [];
+  return products.find((item) => item.name === state.previewProduct) || products[0] || state.data?.products?.[0] || null;
+}
+
+function resolvedLayoutText(key, box = {}) {
+  const copy = currentPreviewCopy();
+  const product = currentPreviewProduct();
+  if (box.binding === "productName") return product?.name || "产品名称";
+  if (box.binding === "subtitle") return copy?.subtitle || "副标题";
+  if (box.binding === "support") return copy?.support || "辅助文案";
+  if (/^point\d+$/.test(box.binding || "")) {
+    const index = Number(box.binding.slice(5)) - 1;
+    return copy?.points?.[index] || `卖点${index + 1}`;
+  }
+  if (box.binding === "net") return product ? `净含量：${product.net}` : "净含量";
+  if (box.binding === "footer") return copy?.footer || "底栏文案";
+  if (box.binding === "custom") return box.text || layoutElementLabel(key, box);
+  return layoutElementLabel(key, box);
+}
+
 function normalizeVisualLayout(layout) {
   const result = structuredClone(layout || { canvas: 1024, elements: {} });
   result.canvas = 1024;
@@ -281,7 +312,7 @@ function renderVisualEditor() {
   $("#layout-canvas").innerHTML = Object.entries(elements)
     .filter(([, box]) => box?.visible !== false)
     .sort((a, b) => (a[1].z || 1) - (b[1].z || 1))
-    .map(([key, box]) => `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${layoutElementLabel(key, box)}<i class="resize-handle"></i></div>`)
+    .map(([key, box]) => `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}"><span class="layout-element-text">${resolvedLayoutText(key, box)}</span><i class="resize-handle"></i></div>`)
     .join("");
   renderLayoutProperties();
   $$("[data-add-element]").forEach((button) => button.onclick = () => {
@@ -303,8 +334,19 @@ function renderLayoutProperties() {
     return;
   }
   const shapeOptions = ["none","rectangle","rounded","circle","ellipse","pill","parallelogram"].map((shape) => `<option value="${shape}" ${box.shape === shape ? "selected" : ""}>${({none:"无底板",rectangle:"直角矩形",rounded:"圆角矩形",circle:"圆形",ellipse:"椭圆",pill:"胶囊",parallelogram:"平行四边形"})[shape]}</option>`).join("");
-  const bindingOptions = ["productName","subtitle","point1","point2","point3","net","footer","custom"].map((binding) => `<option value="${binding}" ${box.binding === binding ? "selected" : ""}>${({productName:"产品名称",subtitle:"副标题",point1:"营销卖点1",point2:"营销卖点2",point3:"营销卖点3",net:"净含量",footer:"底栏文案",custom:"自定义内容"})[binding]}</option>`).join("");
-  panel.innerHTML = `<label>名称<input data-box-text="label" value="${box.label || ""}"></label><label>形状<select data-box-text="shape">${shapeOptions}</select></label><label>内容绑定<select data-box-text="binding">${bindingOptions}</select></label><label>自定义内容<input data-box-text="text" value="${box.text || ""}"></label>`
+  const copy = currentPreviewCopy();
+  const pointCount = Math.max(3, copy?.points?.length || 0, Number($("#tpl-points").value) || 0);
+  const bindingItems = [
+    ["productName", "产品名称"], ["subtitle", "副标题"], ["support", "辅助文案"],
+    ...Array.from({ length: pointCount }, (_, index) => [`point${index + 1}`, `营销卖点${index + 1}`]),
+    ["net", "净含量"], ["footer", "底栏文案"], ["custom", "自定义内容"],
+  ];
+  const bindingOptions = bindingItems.map(([binding, label]) => {
+    const preview = resolvedLayoutText(key, { ...box, binding });
+    return `<option value="${binding}" ${box.binding === binding ? "selected" : ""}>${label}${preview && preview !== label ? `｜${preview}` : ""}</option>`;
+  }).join("");
+  const contentLabel = box.type === "animalRegion" ? "动物及场景要求" : box.type === "backgroundRegion" ? "背景描述" : box.binding === "custom" ? "实际显示文字" : "补充要求";
+  panel.innerHTML = `<label>名称<input data-box-text="label" value="${box.label || ""}"></label><label>形状<select data-box-text="shape">${shapeOptions}</select></label><label>内容绑定<select data-box-text="binding">${bindingOptions}</select></label><label>${contentLabel}<input data-box-text="text" value="${box.text || ""}"></label>`
     + ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
     + `<button type="button" id="remove-layout-element">删除元素</button>`;
   $$("[data-box-field]").forEach((input) => input.oninput = () => {
@@ -442,10 +484,84 @@ function openTemplate(number = null, draft = null) {
   $("#tpl-net").value = template.netPosition;
   $("#tpl-enabled").checked = template.enabled;
   state.editingVisualLayout = normalizeVisualLayout(template.visualLayout || defaultVisualLayout(template.number, template.points));
+  state.previewCategory ||= state.data.categories[0] || null;
+  const categoryOptions = state.data.categories.map((category) => `<option value="${category}">${category}</option>`).join("");
+  $("#preview-category").innerHTML = categoryOptions;
+  $("#preview-category").value = state.previewCategory;
+  fillPreviewProducts();
   state.selectedLayoutElement = null;
   state.drawingLayoutElement = null;
   updateLivePreview();
   $("#template-dialog").showModal();
+}
+
+function fillPreviewProducts() {
+  const products = state.data.products.filter((item) => item.category === state.previewCategory);
+  if (!products.some((item) => item.name === state.previewProduct)) state.previewProduct = products[0]?.name || null;
+  $("#preview-product").innerHTML = products.map((product) => `<option value="${product.name}">${product.name} · ${product.net}</option>`).join("")
+    || `<option value="">该分类暂无产品</option>`;
+  $("#preview-product").value = state.previewProduct || "";
+}
+
+function marketingRow(category, number) {
+  return state.data.marketingRows.find((row) => row.category === category && row.number === number);
+}
+
+function openMarketingEditor() {
+  const number = $("#tpl-number").value.trim().padStart(2, "0");
+  const category = state.previewCategory || state.data.categories[0];
+  $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
+  $("#marketing-template").innerHTML = state.data.templates.map((item) => `<option value="${item.number}">${item.number} · ${item.name}</option>`).join("");
+  $("#marketing-category").value = category;
+  $("#marketing-template").value = state.data.templates.some((item) => item.number === number) ? number : state.data.templates[0]?.number;
+  loadMarketingForm();
+  $("#marketing-dialog").showModal();
+}
+
+function commitMarketingFormToDraft() {
+  if (!state.marketingDraft) return;
+  state.marketingDraft.subtitle = $("#marketing-subtitle").value.trim();
+  state.marketingDraft.support = $("#marketing-support").value.trim();
+  state.marketingDraft.footer = $("#marketing-footer").value.trim();
+  state.marketingDraft.points = $$("#marketing-points input").map((input) => input.value.trim());
+}
+
+function loadMarketingForm() {
+  const category = $("#marketing-category").value;
+  const number = $("#marketing-template").value;
+  const source = marketingRow(category, number) || { category, number, subtitle: "", support: "", points: ["", "", ""], footer: "" };
+  state.editingMarketingKey = `${category}\0${number}`;
+  state.marketingDraft = structuredClone(source);
+  $("#marketing-subtitle").value = source.subtitle || "";
+  $("#marketing-support").value = source.support || "";
+  $("#marketing-footer").value = source.footer || "";
+  $("#marketing-status").textContent = `正在编辑【${category}】模板 ${number}；画布保存后会立即使用这些文案。`;
+  renderMarketingPoints();
+}
+
+function renderMarketingPoints() {
+  const points = state.marketingDraft?.points || [];
+  $("#marketing-points").innerHTML = points.map((point, index) => `
+    <div class="marketing-point-row">
+      <span>${index + 1}</span><input value="${point}" data-marketing-point="${index}" placeholder="输入第${index + 1}条卖点">
+      <button type="button" data-point-up="${index}" title="上移">↑</button>
+      <button type="button" data-point-down="${index}" title="下移">↓</button>
+      <button type="button" class="remove" data-point-remove="${index}" title="删除">×</button>
+    </div>`).join("");
+  $$("[data-marketing-point]").forEach((input) => input.oninput = () => state.marketingDraft.points[Number(input.dataset.marketingPoint)] = input.value);
+  $$("[data-point-up]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointUp), -1));
+  $$("[data-point-down]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointDown), 1));
+  $$("[data-point-remove]").forEach((button) => button.onclick = () => {
+    state.marketingDraft.points.splice(Number(button.dataset.pointRemove), 1);
+    renderMarketingPoints();
+  });
+}
+
+function moveMarketingPoint(index, offset) {
+  const target = index + offset;
+  if (target < 0 || target >= state.marketingDraft.points.length) return;
+  [state.marketingDraft.points[index], state.marketingDraft.points[target]] = [state.marketingDraft.points[target], state.marketingDraft.points[index]];
+  renderMarketingPoints();
 }
 
 function nextTemplateNumber() {
@@ -561,6 +677,42 @@ $("#reset-layout").onclick = () => {
   state.selectedLayoutElement = null;
   state.drawingLayoutElement = null;
   renderVisualEditor();
+};
+$("#preview-category").onchange = (event) => {
+  state.previewCategory = event.target.value;
+  state.previewProduct = null;
+  fillPreviewProducts();
+  renderVisualEditor();
+};
+$("#preview-product").onchange = (event) => {
+  state.previewProduct = event.target.value;
+  renderVisualEditor();
+};
+$("#edit-marketing-btn").onclick = openMarketingEditor;
+$("#close-marketing").onclick = () => $("#marketing-dialog").close();
+$("#cancel-marketing").onclick = () => $("#marketing-dialog").close();
+$("#marketing-category").onchange = loadMarketingForm;
+$("#marketing-template").onchange = loadMarketingForm;
+$("#add-marketing-point").onclick = () => {
+  commitMarketingFormToDraft();
+  state.marketingDraft.points.push("");
+  renderMarketingPoints();
+};
+$("#save-marketing").onclick = async () => {
+  try {
+    commitMarketingFormToDraft();
+    if (!state.marketingDraft.subtitle || !state.marketingDraft.footer) throw new Error("副标题和底栏文案不能为空");
+    const rows = state.data.marketingRows.map((row) => structuredClone(row));
+    const index = rows.findIndex((row) => row.category === state.marketingDraft.category && row.number === state.marketingDraft.number);
+    if (index >= 0) rows[index] = state.marketingDraft;
+    else rows.push(state.marketingDraft);
+    await api("/api/marketing/save", { method: "POST", body: JSON.stringify({ rows }) });
+    state.previewCategory = state.marketingDraft.category;
+    await reload();
+    $("#marketing-dialog").close();
+    renderVisualEditor();
+    toast("营销文案已保存，模板预览已更新");
+  } catch (error) { toast(error.message, true); }
 };
 $("#layout-canvas").onpointerdown = (event) => {
   if (event.target !== $("#layout-canvas") || !state.drawingLayoutElement) return;

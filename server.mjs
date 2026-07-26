@@ -11,10 +11,14 @@ import {
   latestPromptVersion,
   nextPromptPath,
   parseMarketing,
+  parseMarketingExtras,
+  mergeMarketingExtras,
   parseProductFacts,
   parseTemplates,
   safeChildPath,
   serializeTemplates,
+  serializeMarketing,
+  serializeMarketingExtras,
 } from "./lib/core.mjs";
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +26,7 @@ const DATA_ROOT = path.resolve(process.env.PROMPT_DATA_ROOT || path.join(APP_ROO
 const PRODUCT_ROOT = path.join(DATA_ROOT, "产品图");
 const TEMPLATE_FILE = path.join(DATA_ROOT, "主图模板配置", "主图模板配置.md");
 const MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "主图模板营销词配置.md");
+const MARKETING_EXTRAS_FILE = path.join(DATA_ROOT, "营销文案", "扩展营销卖点配置.md");
 const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
@@ -56,9 +61,10 @@ async function saveMeta(meta) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, scriptText, meta, layouts] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, scriptText, meta, layouts] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
+    fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
@@ -67,7 +73,7 @@ async function loadState() {
     ...template,
     visualLayout: layouts[template.number] || null,
   }));
-  const marketing = parseMarketing(marketingText);
+  const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
   const facts = parseProductFacts(scriptText);
   const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true })).filter((entry) => entry.isDirectory());
   const products = [];
@@ -100,6 +106,9 @@ async function loadState() {
     products,
     templates,
     marketingCoverage: Object.fromEntries([...marketing].map(([group, rows]) => [group, rows.size])),
+    marketingRows: [...marketing].flatMap(([category, rows]) => [...rows].map(([number, copy]) => ({
+      category, number, subtitle: copy.subtitle, support: copy.support, points: copy.points, footer: copy.footer,
+    }))),
     aiAnalysisAvailable: Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_VISION_MODEL),
   };
 }
@@ -206,13 +215,38 @@ async function apiSaveTemplates(body) {
   return { ok: true };
 }
 
+async function apiSaveMarketing(body) {
+  if (!Array.isArray(body.rows)) throw new Error("营销文案数据无效");
+  const knownCategories = new Set((await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  const knownTemplates = new Set(parseTemplates(await fs.readFile(TEMPLATE_FILE, "utf8")).map((item) => item.number));
+  const seen = new Set();
+  for (const row of body.rows) {
+    if (!knownCategories.has(row.category)) throw new Error(`未知分类：${row.category}`);
+    if (!knownTemplates.has(row.number)) throw new Error(`未知模板：${row.number}`);
+    const key = `${row.category}\0${row.number}`;
+    if (seen.has(key)) throw new Error(`营销文案重复：${row.category} / ${row.number}`);
+    seen.add(key);
+    if (!Array.isArray(row.points)) throw new Error("卖点列表无效");
+    if ([row.subtitle, row.support, row.footer, ...row.points].some((item) => String(item ?? "").includes("|"))) {
+      throw new Error("营销文案不能使用英文半角竖线");
+    }
+  }
+  await fs.writeFile(MARKETING_FILE, serializeMarketing(body.rows), "utf8");
+  await fs.writeFile(MARKETING_EXTRAS_FILE, serializeMarketingExtras(body.rows), "utf8");
+  return { ok: true };
+}
+
 async function apiGeneratePrompts(body) {
   const state = await loadState();
   const selectedProducts = new Set(body.products || []);
   const selectedTemplates = new Set(body.templates || []);
   const templates = state.templates.filter((item) => selectedTemplates.has(item.number));
   if (!templates.length) throw new Error("请至少选择一个模板");
-  const marketing = parseMarketing(await fs.readFile(MARKETING_FILE, "utf8"));
+  const marketing = mergeMarketingExtras(
+    parseMarketing(await fs.readFile(MARKETING_FILE, "utf8")),
+    parseMarketingExtras(await fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => "")),
+  );
   const generated = [];
   const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
   if (body.mode === "combined") {
@@ -312,6 +346,7 @@ const server = http.createServer(async (request, response) => {
         "/api/products/move": apiMoveProduct,
         "/api/products/tags": apiSaveTags,
         "/api/templates/save": apiSaveTemplates,
+        "/api/marketing/save": apiSaveMarketing,
         "/api/prompts/generate": apiGeneratePrompts,
         "/api/references/import": apiImportReference,
       };

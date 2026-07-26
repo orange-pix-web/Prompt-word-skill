@@ -161,7 +161,12 @@
         <div class="visual-editor">
           <div class="visual-editor-head">
             <div><strong>1024×1024 通用图层画布</strong><small>添加任意数量的产品、卖点、文字、动物或背景区域，再在画布中拖出形状。</small></div>
-            <button type="button" class="text-btn" id="reset-layout">恢复推荐布局</button>
+            <div class="preview-actions"><button type="button" class="text-btn" id="edit-marketing-btn">编辑营销文案</button><button type="button" class="text-btn" id="reset-layout">恢复推荐布局</button></div>
+          </div>
+          <div class="preview-context">
+            <label>预览分类<select id="preview-category"></select></label>
+            <label>示例产品<select id="preview-product"></select></label>
+            <small>画布将显示当前模板对应的真实营销词，仅用于预览，不会写死到布局。</small>
           </div>
           <div class="element-palette" id="element-palette"></div>
           <div class="layout-canvas" id="layout-canvas"></div>
@@ -172,6 +177,26 @@
       </div>
       <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
     </form>
+  </dialog>
+
+  <dialog id="marketing-dialog">
+    <div class="dialog-card marketing-dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">MARKETING COPY</p><h2>营销文案编辑</h2></div><button class="icon-btn" id="close-marketing">×</button></div>
+      <div class="marketing-toolbar">
+        <label>产品分类<select id="marketing-category"></select></label>
+        <label>模板<select id="marketing-template"></select></label>
+        <div class="marketing-status" id="marketing-status"></div>
+      </div>
+      <div class="marketing-form">
+        <label>副标题<input id="marketing-subtitle"></label>
+        <label>辅助文案<input id="marketing-support"></label>
+        <label class="wide">营销卖点</label>
+        <div class="marketing-points wide" id="marketing-points"></div>
+        <button type="button" class="btn ghost wide" id="add-marketing-point">＋ 添加一条卖点</button>
+        <label class="wide">底栏文案<input id="marketing-footer"></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" id="cancel-marketing">取消</button><button type="button" class="btn primary" id="save-marketing">保存营销文案</button></div>
+    </div>
   </dialog>
 
   <dialog id="product-detail-dialog">

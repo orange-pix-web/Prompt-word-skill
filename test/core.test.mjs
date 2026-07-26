@@ -5,10 +5,25 @@ import {
   generateCombinedPromptMarkdown,
   latestPromptVersion,
   parseMarketing,
+  parseMarketingExtras,
+  mergeMarketingExtras,
+  serializeMarketing,
+  serializeMarketingExtras,
   parseProductFacts,
   parseTemplates,
   safeChildPath,
 } from "../lib/core.mjs";
+
+test("营销文案支持扩展卖点并可序列化", () => {
+  const rows = [{
+    category: "鸽子鸟类", number: "01", subtitle: "科学配方", support: "鸽用",
+    points: ["植物提取", "品质保障", "厂家直发", "现货充足", "全国通发"], footer: "养殖常备",
+  }];
+  const primary = serializeMarketing(rows);
+  const extras = serializeMarketingExtras(rows);
+  const merged = mergeMarketingExtras(parseMarketing(primary), parseMarketingExtras(extras));
+  assert.deepEqual(merged.get("鸽子鸟类").get("01").points, rows[0].points);
+});
 
 test("解析模板和营销词表格", () => {
   const templates = parseTemplates(`| 启用 | 编号 | 模板名称 | 构图描述 | 副标题来源 | 卖点数量 | 底栏来源 | 底栏样式 | 特殊要求 | 净含量位置 |
@@ -53,7 +68,7 @@ test("生成所选模板提示词", () => {
   assert.match(result, /现货直发｜厂家直发/);
 });
 
-test("支持1至3条卖点和可视化坐标", () => {
+test("支持自定义数量卖点和可视化坐标", () => {
   const templates = [{
     enabled: true, number: "10", name: "自由布局", layout: "自定义布局", subtitleSource: "副标题",
     points: 2, bottomSource: "底栏文案", bottomStyle: "标准单行", special: "无", netPosition: "产品附近",
