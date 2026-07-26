@@ -80,15 +80,87 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .section-head p, .reference-hero p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
 .template-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
-.template-preview, .live-preview { position: relative; aspect-ratio: 1; background: linear-gradient(160deg, #eaf4ff, #f5eadc); overflow: hidden; }
-.template-card .template-preview { aspect-ratio: 16/10; }
-.wire-title, .wire-product, .wire-points span, .wire-footer, .wire-scene { position: absolute; border-radius: 8px; }
-.wire-scene { inset: 0; opacity: .3; background: radial-gradient(circle at 75% 60%, #82a867 0 12%, transparent 13%), linear-gradient(transparent 58%, #75a65c 59%); }
-.wire-title { left: 7%; top: 10%; width: 38%; height: 13%; background: #2f5c9c; }
-.wire-product { right: 7%; top: 18%; width: 38%; height: 62%; background: linear-gradient(145deg, white, #e8e1d7); border: 2px solid rgba(255,255,255,.8); box-shadow: 0 8px 20px rgba(0,0,0,.1); }
-.wire-points { position: absolute; left: 7%; top: 35%; width: 35%; display: grid; gap: 7px; }
-.wire-points span { position: relative; display: block; height: 14px; background: #ef6c29; }
-.wire-footer { left: 3%; right: 3%; bottom: 4%; height: 12%; background: #273d78; }
+.template-preview, .live-preview { position: relative; aspect-ratio: 1; background: #eef4f7; overflow: hidden; }
+.template-card .template-preview { aspect-ratio: 1; }
+.wireframe, .wire-scene { position: absolute; inset: 0; }
+.wireframe > div, .wire-points span, .wire-quad span, .wire-animals i { position: absolute; border-radius: 5px; }
+.wire-scene { border-radius: 0; background: linear-gradient(#bfe4ff 0 55%, #78ae57 56% 100%); }
+.wire-header, .wire-logo, .wire-tagline, .wire-title, .wire-subtitle, .wire-product, .wire-net, .wire-footer { box-shadow: 0 3px 9px rgba(24,30,36,.12); }
+.wire-header, .wire-logo, .wire-tagline { display: none; }
+.wire-title { left: 6%; top: 8%; width: 42%; height: 12%; background: #24569a; }
+.wire-subtitle { left: 7%; top: 23%; width: 28%; height: 5%; background: rgba(37,33,31,.7); }
+.wire-product { right: 6%; top: 17%; width: 42%; height: 62%; background: linear-gradient(145deg, #fff, #e5ded5); border: 2px solid rgba(255,255,255,.85); }
+.wire-points { left: 7%; top: 34%; width: 35%; height: 31%; display: grid; gap: 7%; }
+.wire-points span { position: relative; inset: auto; display: block; background: #ef6c29; }
+.wire-net { right: 8%; bottom: 17%; width: 25%; height: 5%; background: rgba(255,255,255,.9); }
+.wire-footer { left: 3%; right: 3%; bottom: 3%; height: 11%; background: #273d78; }
+.wire-footer.tall { height: 16%; }
+.wire-animals { left: 4%; bottom: 14%; width: 36%; height: 19%; }
+.wire-animals i { bottom: 0; width: 25%; background: #8b684b; border-radius: 50% 50% 38% 38%; }
+.wire-animals i:nth-child(1) { left: 2%; height: 66%; }
+.wire-animals i:nth-child(2) { left: 31%; height: 92%; background: #d6c2a3; }
+.wire-animals i:nth-child(3) { left: 62%; height: 74%; background: #6d513c; }
+.wire-quad { display: none; }
+
+.layout-02 .wire-scene { inset: 5% 3% 3%; border-radius: 9%; background: #fff; }
+.layout-02 { background: #0b3488; }
+.layout-02 .wire-header { display: block; left: 0; right: 0; top: 0; height: 15%; background: #0b3488; border-radius: 0; }
+.layout-02 .wire-logo { display: block; left: 7%; top: 4%; width: 14%; height: 6%; background: white; }
+.layout-02 .wire-tagline { display: block; right: 7%; top: 5%; width: 28%; height: 5%; background: white; }
+.layout-02 .wire-footer { background: #f0b61a; }
+.layout-02 .wire-animals { display: none; }
+
+.layout-03 .wire-scene { background: linear-gradient(150deg,#f9fdff,#ddecf5); }
+.layout-03 .wire-title { background: #164fa7; }
+.layout-03 .wire-points span { background: #d9302a; border-radius: 99px; }
+.layout-03 .wire-footer { left: 0; right: 0; bottom: 0; border-radius: 0; background: #1155ad; }
+.layout-03 .wire-animals { opacity: .55; }
+
+.layout-04 .wire-scene { background: repeating-linear-gradient(90deg,#e6c08f 0 6%,#f4d7aa 6% 10%); }
+.layout-04 .wire-product { right: 7%; top: 16%; height: 61%; }
+.layout-04 .wire-product::after { content: ""; position: absolute; left: -15%; right: -15%; bottom: -8%; height: 10%; border-radius: 50%; background: #c99e67; }
+.layout-04 .wire-title { background: #4c2b19; }
+.layout-04 .wire-points span { background: #4c2b19; transform: skewX(-12deg); border-radius: 2px; }
+.layout-04 .wire-footer { left: 0; right: 0; bottom: 0; height: 17%; border-radius: 0; background: #4a2816; }
+.layout-04 .wire-animals { display: none; }
+
+.layout-05 .wire-scene { background: linear-gradient(#1688df 0 58%,#4e9b50 59% 100%); }
+.layout-05 .wire-title { background: white; }
+.layout-05 .wire-points span { background: white; border-radius: 99px; }
+.layout-05 .wire-points span::before, .layout-07 .wire-points span::before { content: "✓"; position: absolute; left: 5%; top: 50%; transform: translateY(-50%); color: #1765b9; font-size: 10px; font-weight: 900; }
+.layout-05 .wire-footer { left: 0; right: 0; bottom: 0; border-radius: 0; background: #1464bd; }
+
+.layout-06 .wire-scene { background: linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)), repeating-linear-gradient(90deg,#baa079 0 3%,#d8c09b 3% 7%); }
+.layout-06 .wire-title { left: 0; right: 0; top: 0; width: auto; height: 17%; border-radius: 0 0 45% 45%; background: #08702d; }
+.layout-06 .wire-subtitle { right: 8%; left: auto; top: 22%; width: 31%; height: 8%; background: #08702d; transform: rotate(-4deg); }
+.layout-06 .wire-product { left: 7%; right: auto; top: 30%; width: 41%; height: 48%; }
+.layout-06 .wire-animals { left: 52%; bottom: 18%; width: 43%; height: 36%; }
+.layout-06 .wire-net { right: 5%; bottom: 18%; }
+.layout-06 .wire-footer { left: 0; right: 0; bottom: 0; height: 16%; border-radius: 0; background: #08702d; }
+
+.layout-07 .wire-scene { background: linear-gradient(#26a9ee 0 58%,#64af42 59% 100%); }
+.layout-07 .wire-title { background: #f06b19; }
+.layout-07 .wire-subtitle { background: #25211f; }
+.layout-07 .wire-points span { background: #104da6; border-radius: 99px; }
+.layout-07 .wire-footer { left: 0; right: 0; bottom: 0; border-radius: 0; background: #e31c22; }
+
+.layout-08 .wire-scene { background: linear-gradient(145deg,#ede2d2,#cdbb9d); }
+.layout-08 .wire-title { left: 6%; top: 6%; width: 43%; background: #25211f; }
+.layout-08 .wire-subtitle { left: 7%; top: 21%; }
+.layout-08 .wire-product { left: 7%; right: auto; top: 34%; width: 39%; height: 45%; }
+.layout-08 .wire-animals, .layout-08 .wire-points { display: none; }
+.layout-08 .wire-quad { display: grid; position: absolute; right: 5%; top: 27%; width: 45%; height: 51%; grid-template-columns: 1fr 1fr; gap: 4%; }
+.layout-08 .wire-quad span { position: relative; inset: auto; background: linear-gradient(145deg,#91b37e,#d9c5a5); border: 2px solid white; }
+.layout-08 .wire-footer { background: #4a2f21; }
+
+.layout-09 .wire-scene { background: linear-gradient(#bfe7ff 0 60%,#69a849 61% 100%); }
+.layout-09 .wire-title { width: 44%; background: #173d99; }
+.layout-09 .wire-subtitle { display: none; }
+.layout-09 .wire-points { left: 6%; top: 28%; width: 40%; height: 38%; padding: 8% 5% 5%; background: rgba(15,44,126,.82); border-radius: 8px; }
+.layout-09 .wire-points::before { content: ""; position: absolute; left: 10%; top: 10%; width: 65%; height: 10%; border-radius: 4px; background: white; }
+.layout-09 .wire-points span { background: rgba(255,255,255,.9); height: auto; }
+.layout-09 .wire-footer { left: 0; right: 0; bottom: 0; border-radius: 0; background: #173d99; }
+.layout-09 .wire-animals { opacity: .45; }
 .template-info { padding: 16px; }
 .template-info-head { display: flex; justify-content: space-between; align-items: center; }
 .template-number { color: var(--orange); font-weight: 900; font-size: 11px; letter-spacing: .14em; }

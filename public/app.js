@@ -123,8 +123,28 @@ function toggleProduct(name, checked) {
 }
 
 function wireframe(template) {
-  const points = template.points === 3 ? `<div class="wire-points"><span></span><span></span><span></span></div>` : "";
-  return `<div class="wire-scene"></div><div class="wire-title"></div><div class="wire-product"></div>${points}<div class="wire-footer" style="${template.bottomStyle === "加高单行" ? "height:17%" : ""}"></div>`;
+  const layout = /^0[1-9]$/.test(template.number) ? `layout-${template.number}` : "layout-generic";
+  const points = template.points === 3
+    ? `<div class="wire-points"><span></span><span></span><span></span></div>`
+    : "";
+  const quad = template.number === "08"
+    ? `<div class="wire-quad"><span></span><span></span><span></span><span></span></div>`
+    : "";
+  return `
+    <div class="wireframe ${layout}">
+      <div class="wire-scene"></div>
+      <div class="wire-header"></div>
+      <div class="wire-logo"></div>
+      <div class="wire-tagline"></div>
+      <div class="wire-title"></div>
+      <div class="wire-subtitle"></div>
+      <div class="wire-product"></div>
+      <div class="wire-animals"><i></i><i></i><i></i></div>
+      ${points}
+      ${quad}
+      <div class="wire-net"></div>
+      <div class="wire-footer ${template.bottomStyle === "加高单行" ? "tall" : ""}"></div>
+    </div>`;
 }
 
 function renderTemplates() {
