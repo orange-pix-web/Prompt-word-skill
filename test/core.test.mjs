@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   generatePromptMarkdown,
+  generateCombinedPromptMarkdown,
   latestPromptVersion,
   parseMarketing,
   parseProductFacts,
@@ -74,6 +75,28 @@ test("支持1至3条卖点和可视化坐标", () => {
   assert.doesNotMatch(markdown, /【卖点三】/);
   assert.match(markdown, /1024×1024逻辑画布布局/);
   assert.match(markdown, /主标题位于画面左侧6%/);
+});
+
+test("支持多产品组合主图", () => {
+  const template = {
+    enabled: true, number: "10", name: "双产品", layout: "双产品组合", points: 0,
+    visualLayout: { elements: {
+      product1: { type: "product", label: "产品1", x: 8, y: 20, w: 38, h: 60, z: 4, shape: "none" },
+      product2: { type: "product", label: "产品2", x: 54, y: 20, w: 38, h: 60, z: 4, shape: "none" },
+      animalRegion1: { type: "animalRegion", label: "动物区域1", x: 20, y: 50, w: 60, h: 35, z: 1, shape: "ellipse", text: "鸡鸭鹅背景" },
+    } },
+  };
+  const markdown = generateCombinedPromptMarkdown({
+    products: [
+      { name: "袋装产品", imageName: "袋装产品.png", category: "鸡鸭鹅禽类" },
+      { name: "瓶装产品", imageName: "瓶装产品.png", category: "鸡鸭鹅禽类" },
+    ],
+    templates: [template],
+    marketingByCategory: new Map(),
+  });
+  assert.match(markdown, /【袋装产品】、【瓶装产品】/);
+  assert.match(markdown, /产品1：左侧8%/);
+  assert.match(markdown, /鸡鸭鹅背景/);
 });
 
 test("拒绝越界路径", () => {

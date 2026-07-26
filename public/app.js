@@ -127,11 +127,10 @@ function toggleProduct(name, checked) {
 
 function wireframe(template) {
   if (template.visualLayout?.elements) {
-    const labels = layoutElementLabels();
     const visualClass = /^0[1-9]$/.test(template.number) ? `layout-${template.number}` : "layout-generic";
     const boxes = Object.entries(template.visualLayout.elements)
       .filter(([, box]) => box?.visible !== false)
-      .map(([key, box]) => `<div class="custom-preview-box" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${labels[key] || key}</div>`)
+      .map(([key, box]) => `<div class="custom-preview-box shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${layoutElementLabel(key, box)}</div>`)
       .join("");
     return `<div class="wireframe ${visualClass}"><div class="wire-scene"></div>${boxes}</div>`;
   }
@@ -163,6 +162,55 @@ function layoutElementLabels() {
   return { product: "产品", title: "主标题", subtitle: "副标题", point1: "卖点1", point2: "卖点2", point3: "卖点3", net: "净含量", footer: "底栏" };
 }
 
+function elementDefinitions() {
+  return [
+    ["product", "产品"],
+    ["sellingPoint", "卖点"],
+    ["title", "标题"],
+    ["customText", "自定义文字"],
+    ["net", "净含量"],
+    ["footer", "底栏"],
+    ["animalRegion", "动物区域"],
+    ["backgroundRegion", "背景区域"],
+    ["shape", "装饰形状"],
+  ];
+}
+
+function inferElementType(key) {
+  if (key.startsWith("product")) return "product";
+  if (key.startsWith("point")) return "sellingPoint";
+  if (key === "title" || key === "subtitle") return "title";
+  if (key === "net") return "net";
+  if (key === "footer") return "footer";
+  return "customText";
+}
+
+function layoutElementLabel(key, box = {}) {
+  return box.label || layoutElementLabels()[key] || elementDefinitions().find(([type]) => type === box.type)?.[1] || key;
+}
+
+function normalizeVisualLayout(layout) {
+  const result = structuredClone(layout || { canvas: 1024, elements: {} });
+  result.canvas = 1024;
+  result.elements ||= {};
+  for (const [key, box] of Object.entries(result.elements)) {
+    box.type ||= inferElementType(key);
+    box.label ||= layoutElementLabel(key, box);
+    box.shape ||= box.type === "product" ? "none" : box.type === "animalRegion" || box.type === "backgroundRegion" ? "rectangle" : "rounded";
+    box.binding ||= key === "title" ? "productName" : key === "subtitle" ? "subtitle" : key.startsWith("point") ? key : key === "net" ? "net" : key === "footer" ? "footer" : "custom";
+    box.text ||= box.type === "animalRegion" ? "与产品分类相符的真实动物" : box.type === "backgroundRegion" ? "真实干净的使用场景" : "";
+    clampBox(box);
+  }
+  return result;
+}
+
+function nextElementKey(type) {
+  const elements = state.editingVisualLayout.elements;
+  let index = 1;
+  while (elements[`${type}${index}`]) index += 1;
+  return `${type}${index}`;
+}
+
 function defaultVisualLayout(number = "00", points = 3) {
   const elements = {
     title: { x: 6, y: 8, w: 42, h: 12, z: 5 },
@@ -186,24 +234,30 @@ function defaultVisualLayout(number = "00", points = 3) {
   for (let index = 1; index <= 3; index += 1) {
     elements[`point${index}`].visible = index <= points;
   }
-  return { canvas: 1024, elements };
+  return normalizeVisualLayout({ canvas: 1024, elements });
 }
 
 function syncPointElements() {
   if (!state.editingVisualLayout) return;
   const count = Number($("#tpl-points").value);
-  for (let index = 1; index <= 3; index += 1) {
+  for (let index = 1; index <= count; index += 1) {
     const key = `point${index}`;
     const box = state.editingVisualLayout.elements[key];
-    if (index <= count && !box) state.editingVisualLayout.elements[key] = { x: 7, y: 35 + (index - 1) * 11, w: 35, h: 8, z: 5 };
+    if (!box) state.editingVisualLayout.elements[key] = normalizeVisualLayout({ elements: {
+      [key]: { x: 7, y: Math.min(76, 35 + (index - 1) * 9), w: 35, h: 7, z: 5, type: "sellingPoint", label: `卖点${index}`, binding: index <= 3 ? `point${index}` : "custom", text: "" },
+    } }).elements[key];
     const current = state.editingVisualLayout.elements[key];
     if (!current) continue;
-    if (index > count) {
-      current.visible = false;
-      current.disabledByCount = true;
-    } else if (current.disabledByCount) {
+    if (current.disabledByCount) {
       current.visible = true;
       delete current.disabledByCount;
+    }
+  }
+  for (const [key, box] of Object.entries(state.editingVisualLayout.elements)) {
+    const match = key.match(/^point(\d+)$/);
+    if (match && Number(match[1]) > count) {
+      box.visible = false;
+      box.disabledByCount = true;
     }
   }
 }
@@ -220,27 +274,21 @@ function clampBox(box) {
 function renderVisualEditor() {
   if (!state.editingVisualLayout) return;
   syncPointElements();
-  const labels = layoutElementLabels();
   const elements = state.editingVisualLayout.elements;
-  $("#element-palette").innerHTML = Object.entries(labels).map(([key, label]) => {
-    const exists = elements[key]?.visible !== false && elements[key];
-    return `<button type="button" class="element-tool ${exists ? "exists" : ""} ${state.drawingLayoutElement === key ? "drawing" : ""}" data-layout-tool="${key}">${exists ? "选择" : "绘制"}${label}</button>`;
+  $("#element-palette").innerHTML = elementDefinitions().map(([type, label]) => {
+    return `<button type="button" class="element-tool ${state.drawingLayoutElement?.type === type ? "drawing" : ""}" data-add-element="${type}">＋ ${label}</button>`;
   }).join("");
   $("#layout-canvas").innerHTML = Object.entries(elements)
     .filter(([, box]) => box?.visible !== false)
     .sort((a, b) => (a[1].z || 1) - (b[1].z || 1))
-    .map(([key, box]) => `<div class="layout-element ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${labels[key]}<i class="resize-handle"></i></div>`)
+    .map(([key, box]) => `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${layoutElementLabel(key, box)}<i class="resize-handle"></i></div>`)
     .join("");
   renderLayoutProperties();
-  $$("[data-layout-tool]").forEach((button) => button.onclick = () => {
-    const key = button.dataset.layoutTool;
-    if (elements[key]?.visible !== false && elements[key]) {
-      state.selectedLayoutElement = key;
-      state.drawingLayoutElement = null;
-    } else {
-      state.selectedLayoutElement = null;
-      state.drawingLayoutElement = key;
-    }
+  $$("[data-add-element]").forEach((button) => button.onclick = () => {
+    const type = button.dataset.addElement;
+    const key = nextElementKey(type);
+    state.selectedLayoutElement = null;
+    state.drawingLayoutElement = { key, type, label: `${elementDefinitions().find(([item]) => item === type)?.[1] || type}${key.match(/\d+$/)?.[0] || ""}` };
     renderVisualEditor();
   });
   $$(".layout-element").forEach((element) => element.onpointerdown = (event) => beginMoveLayoutElement(event, element.dataset.key, event.target.classList.contains("resize-handle")));
@@ -251,14 +299,21 @@ function renderLayoutProperties() {
   const key = state.selectedLayoutElement;
   const box = key && state.editingVisualLayout?.elements[key];
   if (!box) {
-    panel.innerHTML = `<span>${state.drawingLayoutElement ? `请在画布空白处拖动绘制“${layoutElementLabels()[state.drawingLayoutElement]}”` : "尚未选择元素"}</span>`;
+    panel.innerHTML = `<span>${state.drawingLayoutElement ? `请在画布空白处拖动绘制“${state.drawingLayoutElement.label}”` : "尚未选择元素"}</span>`;
     return;
   }
-  panel.innerHTML = ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
+  const shapeOptions = ["none","rectangle","rounded","circle","ellipse","pill","parallelogram"].map((shape) => `<option value="${shape}" ${box.shape === shape ? "selected" : ""}>${({none:"无底板",rectangle:"直角矩形",rounded:"圆角矩形",circle:"圆形",ellipse:"椭圆",pill:"胶囊",parallelogram:"平行四边形"})[shape]}</option>`).join("");
+  const bindingOptions = ["productName","subtitle","point1","point2","point3","net","footer","custom"].map((binding) => `<option value="${binding}" ${box.binding === binding ? "selected" : ""}>${({productName:"产品名称",subtitle:"副标题",point1:"营销卖点1",point2:"营销卖点2",point3:"营销卖点3",net:"净含量",footer:"底栏文案",custom:"自定义内容"})[binding]}</option>`).join("");
+  panel.innerHTML = `<label>名称<input data-box-text="label" value="${box.label || ""}"></label><label>形状<select data-box-text="shape">${shapeOptions}</select></label><label>内容绑定<select data-box-text="binding">${bindingOptions}</select></label><label>自定义内容<input data-box-text="text" value="${box.text || ""}"></label>`
+    + ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
     + `<button type="button" id="remove-layout-element">删除元素</button>`;
   $$("[data-box-field]").forEach((input) => input.oninput = () => {
     box[input.dataset.boxField] = Number(input.value);
     clampBox(box);
+    renderVisualEditor();
+  });
+  $$("[data-box-text]").forEach((input) => input.oninput = () => {
+    box[input.dataset.boxText] = input.value;
     renderVisualEditor();
   });
   $("#remove-layout-element").onclick = () => {
@@ -348,7 +403,10 @@ function renderGenerator() {
 function updateSummary() {
   $("#summary-products").textContent = state.selectedProducts.size;
   $("#summary-templates").textContent = state.selectedTemplates.size;
-  $("#summary-total").textContent = state.selectedProducts.size * state.selectedTemplates.size;
+  const combined = $("#generation-mode")?.value === "combined";
+  $("#summary-total").textContent = combined
+    ? (state.selectedProducts.size >= 2 ? state.selectedTemplates.size : 0)
+    : state.selectedProducts.size * state.selectedTemplates.size;
 }
 
 function fillCategorySelects() {
@@ -383,7 +441,7 @@ function openTemplate(number = null, draft = null) {
   $("#tpl-special").value = template.special;
   $("#tpl-net").value = template.netPosition;
   $("#tpl-enabled").checked = template.enabled;
-  state.editingVisualLayout = structuredClone(template.visualLayout || defaultVisualLayout(template.number, template.points));
+  state.editingVisualLayout = normalizeVisualLayout(template.visualLayout || defaultVisualLayout(template.number, template.points));
   state.selectedLayoutElement = null;
   state.drawingLayoutElement = null;
   updateLivePreview();
@@ -507,9 +565,12 @@ $("#reset-layout").onclick = () => {
 $("#layout-canvas").onpointerdown = (event) => {
   if (event.target !== $("#layout-canvas") || !state.drawingLayoutElement) return;
   event.preventDefault();
-  const key = state.drawingLayoutElement;
+  const draft = state.drawingLayoutElement;
+  const key = draft.key;
   const start = canvasPoint(event);
-  const box = { x: start.x, y: start.y, w: 3, h: 3, z: 5, visible: true };
+  const box = normalizeVisualLayout({ elements: {
+    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: "custom", text: "", shape: draft.type === "product" ? "none" : "rounded" },
+  } }).elements[key];
   state.editingVisualLayout.elements[key] = box;
   const move = (moveEvent) => {
     const point = canvasPoint(moveEvent);
@@ -540,11 +601,12 @@ $("#generate-select-templates").onclick = () => {
   state.selectedTemplates = new Set(state.data.templates.filter((item) => item.enabled).map((item) => item.number));
   renderGenerator();
 };
+$("#generation-mode").onchange = updateSummary;
 $("#generate-btn").onclick = async () => {
   try {
     $("#generation-result").textContent = "正在生成…";
     const result = await api("/api/prompts/generate", { method: "POST", body: JSON.stringify({
-      products: [...state.selectedProducts], templates: [...state.selectedTemplates],
+      products: [...state.selectedProducts], templates: [...state.selectedTemplates], mode: $("#generation-mode").value,
     }) });
     $("#generation-result").textContent = `已生成 ${result.generated.length} 份文件\n${result.generated.join("\n")}`;
     await reload(); toast("提示词生成完成");

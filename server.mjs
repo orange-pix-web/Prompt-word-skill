@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import {
   IMAGE_EXTENSIONS,
+  generateCombinedPromptMarkdown,
   generatePromptMarkdown,
   latestPromptVersion,
   nextPromptPath,
@@ -213,7 +214,18 @@ async function apiGeneratePrompts(body) {
   if (!templates.length) throw new Error("请至少选择一个模板");
   const marketing = parseMarketing(await fs.readFile(MARKETING_FILE, "utf8"));
   const generated = [];
-  for (const product of state.products.filter((item) => selectedProducts.has(item.name))) {
+  const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
+  if (body.mode === "combined") {
+    if (chosenProducts.length < 2) throw new Error("多产品组合模式请至少选择两个产品");
+    const markdown = generateCombinedPromptMarkdown({ products: chosenProducts, templates, marketingByCategory: marketing });
+    const combinedRoot = path.join(DATA_ROOT, "生图提示词", "多产品组合");
+    await fs.mkdir(combinedRoot, { recursive: true });
+    const safeName = chosenProducts.map((item) => item.name).join("＋").slice(0, 80);
+    const target = path.join(combinedRoot, `${safeName}-组合主图提示词-${Date.now()}.md`);
+    await fs.writeFile(target, markdown, "utf8");
+    return { ok: true, generated: [path.relative(DATA_ROOT, target).replaceAll("\\", "/")] };
+  }
+  for (const product of chosenProducts) {
     const rows = marketing.get(product.category);
     if (!rows) throw new Error(`分类【${product.category}】没有营销词配置`);
     const markdown = generatePromptMarkdown({ product, templates, marketingRows: rows });

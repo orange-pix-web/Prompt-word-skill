@@ -235,24 +235,32 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .layout-canvas::after { content: ""; position: absolute; inset: 3%; border: 1px dashed rgba(226,92,24,.4); border-radius: 7px; pointer-events: none; }
 .layout-element { position: absolute; display: grid; place-items: center; min-width: 18px; min-height: 18px; border: 2px solid rgba(255,255,255,.92); border-radius: 7px; color: white; font-size: 11px; font-weight: 800; text-align: center; cursor: move; box-shadow: 0 5px 14px rgba(24,30,36,.18); overflow: visible; }
 .layout-element.selected { outline: 3px solid rgba(242,106,33,.42); outline-offset: 2px; }
-.layout-element[data-key="product"] { color: #4f473f; background: linear-gradient(145deg,#fff,#ded6cc); }
-.layout-element[data-key="title"] { background: #24569a; }
-.layout-element[data-key="subtitle"] { background: #6c6762; }
-.layout-element[data-key^="point"] { background: #ef6c29; }
-.layout-element[data-key="net"] { color: #514d49; background: rgba(255,255,255,.94); }
-.layout-element[data-key="footer"] { background: #273d78; }
+.layout-element.type-product { color: #4f473f; background: linear-gradient(145deg,#fff,#ded6cc); }
+.layout-element.type-title { background: #24569a; }
+.layout-element.type-sellingPoint { background: #ef6c29; }
+.layout-element.type-net { color: #514d49; background: rgba(255,255,255,.94); }
+.layout-element.type-footer { background: #273d78; }
+.layout-element.type-animalRegion { background: rgba(74,126,58,.58); border-style: dashed; }
+.layout-element.type-backgroundRegion { background: rgba(55,142,200,.35); border-style: dashed; }
+.layout-element.type-shape { background: rgba(135,91,170,.5); }
+.shape-none { background: transparent !important; border-style: dashed !important; color: var(--ink) !important; box-shadow: none !important; }
+.shape-rectangle { border-radius: 0 !important; }
+.shape-circle { border-radius: 50% !important; aspect-ratio: 1; }
+.shape-ellipse, .shape-pill { border-radius: 999px !important; }
+.shape-parallelogram { transform: skewX(-12deg); }
 .resize-handle { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; background: var(--orange); cursor: nwse-resize; }
-.layout-properties { display: grid; grid-template-columns: repeat(6,1fr) auto; gap: 6px; align-items: end; margin-top: 9px; min-height: 42px; }
+.layout-properties { display: grid; grid-template-columns: repeat(5,minmax(58px,1fr)); gap: 6px; align-items: end; margin-top: 9px; min-height: 42px; }
 .layout-properties label { font-size: 9px; }
 .layout-properties input { width: 100%; padding: 6px; margin-top: 3px; border: 1px solid var(--line); border-radius: 7px; }
 .layout-properties > span { color: var(--muted); font-size: 10px; }
 .layout-properties button { height: 31px; border: 0; border-radius: 8px; padding: 0 10px; color: #a8392e; background: #f9e7e4; }
 .custom-preview-box { position: absolute; display: grid; place-items: center; border-radius: 5px; border: 1px solid rgba(255,255,255,.85); color: white; font-size: 7px; font-weight: 800; overflow: hidden; box-shadow: 0 3px 8px rgba(20,30,40,.12); }
-.custom-preview-box[data-key="product"], .custom-preview-box[data-key="net"] { color: #514d49; background: linear-gradient(145deg,#fff,#ddd5cb); }
-.custom-preview-box[data-key="title"] { background: #24569a; }
-.custom-preview-box[data-key="subtitle"] { background: #6c6762; }
-.custom-preview-box[data-key^="point"] { background: #ef6c29; }
-.custom-preview-box[data-key="footer"] { background: #273d78; }
+.custom-preview-box.type-product, .custom-preview-box.type-net { color: #514d49; background: linear-gradient(145deg,#fff,#ddd5cb); }
+.custom-preview-box.type-title { background: #24569a; }
+.custom-preview-box.type-sellingPoint { background: #ef6c29; }
+.custom-preview-box.type-footer { background: #273d78; }
+.custom-preview-box.type-animalRegion { background: rgba(74,126,58,.5); border-style: dashed; }
+.custom-preview-box.type-backgroundRegion { background: rgba(55,142,200,.3); border-style: dashed; }
 .toggle-label { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
 .toggle-label input { display: none; }
 .switch { width: 42px; height: 23px; background: #ccc4be; border-radius: 99px; position: relative; }

@@ -87,6 +87,12 @@
               <div class="accent"><strong id="summary-total">0</strong><span>条提示词</span></div>
             </div>
             <div class="summary-note">提示词会保存到对应产品分类文件夹，自动增加版本号，不覆盖历史文件。</div>
+            <label class="generation-mode">生成方式
+              <select id="generation-mode">
+                <option value="separate">多个产品分别生成</option>
+                <option value="combined">多个产品放在同一张主图</option>
+              </select>
+            </label>
             <button class="btn primary large" id="generate-btn">生成所选提示词</button>
             <div class="result-box" id="generation-result">等待选择产品和模板</div>
           </div>
@@ -144,7 +150,7 @@
           <label>模板编号<input id="tpl-number" maxlength="2" required></label>
           <label>模板名称<input id="tpl-name" required></label>
           <label>副标题来源<select id="tpl-subtitle"><option>副标题</option><option>辅助文案</option><option>自动用量</option><option>无</option></select></label>
-          <label>卖点数量<select id="tpl-points"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+          <label>默认营销卖点数量<input id="tpl-points" type="number" min="0" max="20" value="3"></label>
           <label>底栏来源<select id="tpl-bottom-source"><option>底栏文案</option><option>辅助文案+底栏文案</option><option>自动用量</option></select></label>
           <label>底栏样式<select id="tpl-bottom-style"><option>标准单行</option><option>醒目单行</option><option>加高单行</option><option>双行</option></select></label>
           <label>净含量位置<select id="tpl-net"><option>产品附近</option><option>右侧空白区</option></select></label>
@@ -154,7 +160,7 @@
         </div>
         <div class="visual-editor">
           <div class="visual-editor-head">
-            <div><strong>1024×1024 可视化布局</strong><small>选择元素后在画布空白处拖出矩形；已有元素可拖动，右下角可缩放。</small></div>
+            <div><strong>1024×1024 通用图层画布</strong><small>添加任意数量的产品、卖点、文字、动物或背景区域，再在画布中拖出形状。</small></div>
             <button type="button" class="text-btn" id="reset-layout">恢复推荐布局</button>
           </div>
           <div class="element-palette" id="element-palette"></div>
