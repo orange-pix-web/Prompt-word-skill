@@ -214,15 +214,45 @@ label input:focus, label select:focus, label textarea:focus { border-color: var(
 dialog { border: 0; padding: 0; background: transparent; }
 dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .dialog-card { width: min(620px, 92vw); max-height: 90vh; overflow: auto; background: var(--card); border-radius: 20px; padding: 22px; box-shadow: 0 30px 90px rgba(0,0,0,.28); }
-.wide-dialog { width: min(980px, 94vw); }
+.wide-dialog { width: min(1180px, 96vw); }
 .dialog-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .dialog-head h2 { margin: 0; }
 .icon-btn { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #eee8e2; font-size: 20px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .form-grid .wide { grid-column: 1/-1; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
-.template-editor { display: grid; grid-template-columns: 1.1fr .9fr; gap: 20px; }
+.template-editor { display: grid; grid-template-columns: .85fr 1.15fr; gap: 20px; }
 .live-preview { border: 1px solid var(--line); border-radius: 16px; }
+.visual-editor { min-width: 0; }
+.visual-editor-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 9px; }
+.visual-editor-head strong, .visual-editor-head small { display: block; }
+.visual-editor-head small { color: var(--muted); font-size: 10px; margin-top: 4px; line-height: 1.5; }
+.element-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+.element-tool { border: 1px solid var(--line); background: white; color: var(--muted); border-radius: 8px; padding: 6px 9px; font-size: 10px; }
+.element-tool.exists { color: #2c6c4c; border-color: #b8dbc8; background: #eff8f3; }
+.element-tool.drawing { color: white; background: var(--orange); border-color: var(--orange); }
+.layout-canvas { position: relative; width: min(100%, 540px); aspect-ratio: 1; margin: 0 auto; overflow: hidden; touch-action: none; user-select: none; border: 1px solid #cabeb2; border-radius: 12px; background-color: #eef4f7; background-image: linear-gradient(rgba(70,80,90,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(70,80,90,.07) 1px,transparent 1px); background-size: 10% 10%; }
+.layout-canvas::after { content: ""; position: absolute; inset: 3%; border: 1px dashed rgba(226,92,24,.4); border-radius: 7px; pointer-events: none; }
+.layout-element { position: absolute; display: grid; place-items: center; min-width: 18px; min-height: 18px; border: 2px solid rgba(255,255,255,.92); border-radius: 7px; color: white; font-size: 11px; font-weight: 800; text-align: center; cursor: move; box-shadow: 0 5px 14px rgba(24,30,36,.18); overflow: visible; }
+.layout-element.selected { outline: 3px solid rgba(242,106,33,.42); outline-offset: 2px; }
+.layout-element[data-key="product"] { color: #4f473f; background: linear-gradient(145deg,#fff,#ded6cc); }
+.layout-element[data-key="title"] { background: #24569a; }
+.layout-element[data-key="subtitle"] { background: #6c6762; }
+.layout-element[data-key^="point"] { background: #ef6c29; }
+.layout-element[data-key="net"] { color: #514d49; background: rgba(255,255,255,.94); }
+.layout-element[data-key="footer"] { background: #273d78; }
+.resize-handle { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; border: 2px solid white; border-radius: 50%; background: var(--orange); cursor: nwse-resize; }
+.layout-properties { display: grid; grid-template-columns: repeat(6,1fr) auto; gap: 6px; align-items: end; margin-top: 9px; min-height: 42px; }
+.layout-properties label { font-size: 9px; }
+.layout-properties input { width: 100%; padding: 6px; margin-top: 3px; border: 1px solid var(--line); border-radius: 7px; }
+.layout-properties > span { color: var(--muted); font-size: 10px; }
+.layout-properties button { height: 31px; border: 0; border-radius: 8px; padding: 0 10px; color: #a8392e; background: #f9e7e4; }
+.custom-preview-box { position: absolute; display: grid; place-items: center; border-radius: 5px; border: 1px solid rgba(255,255,255,.85); color: white; font-size: 7px; font-weight: 800; overflow: hidden; box-shadow: 0 3px 8px rgba(20,30,40,.12); }
+.custom-preview-box[data-key="product"], .custom-preview-box[data-key="net"] { color: #514d49; background: linear-gradient(145deg,#fff,#ddd5cb); }
+.custom-preview-box[data-key="title"] { background: #24569a; }
+.custom-preview-box[data-key="subtitle"] { background: #6c6762; }
+.custom-preview-box[data-key^="point"] { background: #ef6c29; }
+.custom-preview-box[data-key="footer"] { background: #273d78; }
 .toggle-label { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
 .toggle-label input { display: none; }
 .switch { width: 42px; height: 23px; background: #ccc4be; border-radius: 99px; position: relative; }

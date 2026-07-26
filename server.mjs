@@ -24,6 +24,7 @@ const MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "主图模板营销�
 const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
+const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const PORT = Number(process.env.PORT || 4178);
@@ -54,13 +55,17 @@ async function saveMeta(meta) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, scriptText, meta] = await Promise.all([
+  const [templateText, marketingText, scriptText, meta, layouts] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
+    readJson(LAYOUT_FILE, {}),
   ]);
-  const templates = parseTemplates(templateText);
+  const templates = parseTemplates(templateText).map((template) => ({
+    ...template,
+    visualLayout: layouts[template.number] || null,
+  }));
   const marketing = parseMarketing(marketingText);
   const facts = parseProductFacts(scriptText);
   const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true })).filter((entry) => entry.isDirectory());
@@ -192,6 +197,11 @@ async function apiSaveTemplates(body) {
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
   }
   await fs.writeFile(TEMPLATE_FILE, serializeTemplates(body.templates), "utf8");
+  await fs.mkdir(META_ROOT, { recursive: true });
+  const layouts = Object.fromEntries(body.templates
+    .filter((template) => template.visualLayout)
+    .map((template) => [template.number, template.visualLayout]));
+  await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
   return { ok: true };
 }
 

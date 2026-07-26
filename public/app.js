@@ -6,6 +6,9 @@ const state = {
   selectedProducts: new Set(),
   selectedTemplates: new Set(),
   editingTemplateNumber: null,
+  editingVisualLayout: null,
+  selectedLayoutElement: null,
+  drawingLayoutElement: null,
   referenceFile: null,
   referenceDimensions: null,
   detailProduct: null,
@@ -123,6 +126,15 @@ function toggleProduct(name, checked) {
 }
 
 function wireframe(template) {
+  if (template.visualLayout?.elements) {
+    const labels = layoutElementLabels();
+    const visualClass = /^0[1-9]$/.test(template.number) ? `layout-${template.number}` : "layout-generic";
+    const boxes = Object.entries(template.visualLayout.elements)
+      .filter(([, box]) => box?.visible !== false)
+      .map(([key, box]) => `<div class="custom-preview-box" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${labels[key] || key}</div>`)
+      .join("");
+    return `<div class="wireframe ${visualClass}"><div class="wire-scene"></div>${boxes}</div>`;
+  }
   const layout = /^0[1-9]$/.test(template.number) ? `layout-${template.number}` : "layout-generic";
   const points = template.points === 3
     ? `<div class="wire-points"><span></span><span></span><span></span></div>`
@@ -145,6 +157,150 @@ function wireframe(template) {
       <div class="wire-net"></div>
       <div class="wire-footer ${template.bottomStyle === "加高单行" ? "tall" : ""}"></div>
     </div>`;
+}
+
+function layoutElementLabels() {
+  return { product: "产品", title: "主标题", subtitle: "副标题", point1: "卖点1", point2: "卖点2", point3: "卖点3", net: "净含量", footer: "底栏" };
+}
+
+function defaultVisualLayout(number = "00", points = 3) {
+  const elements = {
+    title: { x: 6, y: 8, w: 42, h: 12, z: 5 },
+    subtitle: { x: 7, y: 23, w: 29, h: 6, z: 5 },
+    point1: { x: 7, y: 35, w: 35, h: 8, z: 5 },
+    point2: { x: 7, y: 46, w: 35, h: 8, z: 5 },
+    point3: { x: 7, y: 57, w: 35, h: 8, z: 5 },
+    product: { x: 53, y: 17, w: 41, h: 62, z: 4 },
+    net: { x: 67, y: 81, w: 25, h: 6, z: 6 },
+    footer: { x: 3, y: 87, w: 94, h: 10, z: 7 },
+  };
+  const presets = {
+    "04": { product: [52,16,42,61], footer: [0,83,100,17] },
+    "06": { title: [0,0,100,17], subtitle: [61,22,31,8], product: [7,30,41,48], net: [70,75,24,6], footer: [0,84,100,16] },
+    "08": { title: [6,6,43,12], subtitle: [7,21,29,6], product: [7,34,39,45], footer: [3,87,94,10] },
+    "09": { title: [6,8,44,12], subtitle: [7,25,34,7], product: [53,17,41,62], footer: [0,89,100,11] },
+  };
+  for (const [key, values] of Object.entries(presets[number] || {})) {
+    [elements[key].x, elements[key].y, elements[key].w, elements[key].h] = values;
+  }
+  for (let index = 1; index <= 3; index += 1) {
+    elements[`point${index}`].visible = index <= points;
+  }
+  return { canvas: 1024, elements };
+}
+
+function syncPointElements() {
+  if (!state.editingVisualLayout) return;
+  const count = Number($("#tpl-points").value);
+  for (let index = 1; index <= 3; index += 1) {
+    const key = `point${index}`;
+    const box = state.editingVisualLayout.elements[key];
+    if (index <= count && !box) state.editingVisualLayout.elements[key] = { x: 7, y: 35 + (index - 1) * 11, w: 35, h: 8, z: 5 };
+    const current = state.editingVisualLayout.elements[key];
+    if (!current) continue;
+    if (index > count) {
+      current.visible = false;
+      current.disabledByCount = true;
+    } else if (current.disabledByCount) {
+      current.visible = true;
+      delete current.disabledByCount;
+    }
+  }
+}
+
+function clampBox(box) {
+  box.w = Math.max(3, Math.min(100, Number(box.w)));
+  box.h = Math.max(3, Math.min(100, Number(box.h)));
+  box.x = Math.max(0, Math.min(100 - box.w, Number(box.x)));
+  box.y = Math.max(0, Math.min(100 - box.h, Number(box.y)));
+  box.z = Math.max(1, Math.min(20, Number(box.z || 1)));
+  return box;
+}
+
+function renderVisualEditor() {
+  if (!state.editingVisualLayout) return;
+  syncPointElements();
+  const labels = layoutElementLabels();
+  const elements = state.editingVisualLayout.elements;
+  $("#element-palette").innerHTML = Object.entries(labels).map(([key, label]) => {
+    const exists = elements[key]?.visible !== false && elements[key];
+    return `<button type="button" class="element-tool ${exists ? "exists" : ""} ${state.drawingLayoutElement === key ? "drawing" : ""}" data-layout-tool="${key}">${exists ? "选择" : "绘制"}${label}</button>`;
+  }).join("");
+  $("#layout-canvas").innerHTML = Object.entries(elements)
+    .filter(([, box]) => box?.visible !== false)
+    .sort((a, b) => (a[1].z || 1) - (b[1].z || 1))
+    .map(([key, box]) => `<div class="layout-element ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}">${labels[key]}<i class="resize-handle"></i></div>`)
+    .join("");
+  renderLayoutProperties();
+  $$("[data-layout-tool]").forEach((button) => button.onclick = () => {
+    const key = button.dataset.layoutTool;
+    if (elements[key]?.visible !== false && elements[key]) {
+      state.selectedLayoutElement = key;
+      state.drawingLayoutElement = null;
+    } else {
+      state.selectedLayoutElement = null;
+      state.drawingLayoutElement = key;
+    }
+    renderVisualEditor();
+  });
+  $$(".layout-element").forEach((element) => element.onpointerdown = (event) => beginMoveLayoutElement(event, element.dataset.key, event.target.classList.contains("resize-handle")));
+}
+
+function renderLayoutProperties() {
+  const panel = $("#layout-properties");
+  const key = state.selectedLayoutElement;
+  const box = key && state.editingVisualLayout?.elements[key];
+  if (!box) {
+    panel.innerHTML = `<span>${state.drawingLayoutElement ? `请在画布空白处拖动绘制“${layoutElementLabels()[state.drawingLayoutElement]}”` : "尚未选择元素"}</span>`;
+    return;
+  }
+  panel.innerHTML = ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
+    + `<button type="button" id="remove-layout-element">删除元素</button>`;
+  $$("[data-box-field]").forEach((input) => input.oninput = () => {
+    box[input.dataset.boxField] = Number(input.value);
+    clampBox(box);
+    renderVisualEditor();
+  });
+  $("#remove-layout-element").onclick = () => {
+    box.visible = false;
+    box.manualHidden = true;
+    state.selectedLayoutElement = null;
+    renderVisualEditor();
+  };
+}
+
+function canvasPoint(event) {
+  const rect = $("#layout-canvas").getBoundingClientRect();
+  return { x: (event.clientX - rect.left) / rect.width * 100, y: (event.clientY - rect.top) / rect.height * 100 };
+}
+
+function beginMoveLayoutElement(event, key, resizing) {
+  event.preventDefault();
+  event.stopPropagation();
+  state.selectedLayoutElement = key;
+  state.drawingLayoutElement = null;
+  const box = state.editingVisualLayout.elements[key];
+  const start = canvasPoint(event);
+  const original = { ...box };
+  const move = (moveEvent) => {
+    const point = canvasPoint(moveEvent);
+    if (resizing) {
+      box.w = original.w + point.x - start.x;
+      box.h = original.h + point.y - start.y;
+    } else {
+      box.x = original.x + point.x - start.x;
+      box.y = original.y + point.y - start.y;
+    }
+    clampBox(box);
+    renderVisualEditor();
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+  renderVisualEditor();
 }
 
 function renderTemplates() {
@@ -227,6 +383,9 @@ function openTemplate(number = null, draft = null) {
   $("#tpl-special").value = template.special;
   $("#tpl-net").value = template.netPosition;
   $("#tpl-enabled").checked = template.enabled;
+  state.editingVisualLayout = structuredClone(template.visualLayout || defaultVisualLayout(template.number, template.points));
+  state.selectedLayoutElement = null;
+  state.drawingLayoutElement = null;
   updateLivePreview();
   $("#template-dialog").showModal();
 }
@@ -248,11 +407,12 @@ function templateFromForm() {
     bottomStyle: $("#tpl-bottom-style").value,
     special: $("#tpl-special").value.trim() || "无",
     netPosition: $("#tpl-net").value,
+    visualLayout: structuredClone(state.editingVisualLayout),
   };
 }
 
 function updateLivePreview() {
-  $("#live-preview").innerHTML = wireframe(templateFromForm());
+  renderVisualEditor();
 }
 
 async function saveTemplates() {
@@ -338,6 +498,38 @@ $("#save-template-btn").onclick = async () => {
   } catch (error) { toast(error.message, true); }
 };
 $$(".template-editor input, .template-editor select, .template-editor textarea").forEach((element) => element.addEventListener("input", updateLivePreview));
+$("#reset-layout").onclick = () => {
+  state.editingVisualLayout = defaultVisualLayout($("#tpl-number").value.padStart(2, "0"), Number($("#tpl-points").value));
+  state.selectedLayoutElement = null;
+  state.drawingLayoutElement = null;
+  renderVisualEditor();
+};
+$("#layout-canvas").onpointerdown = (event) => {
+  if (event.target !== $("#layout-canvas") || !state.drawingLayoutElement) return;
+  event.preventDefault();
+  const key = state.drawingLayoutElement;
+  const start = canvasPoint(event);
+  const box = { x: start.x, y: start.y, w: 3, h: 3, z: 5, visible: true };
+  state.editingVisualLayout.elements[key] = box;
+  const move = (moveEvent) => {
+    const point = canvasPoint(moveEvent);
+    box.x = Math.min(start.x, point.x);
+    box.y = Math.min(start.y, point.y);
+    box.w = Math.abs(point.x - start.x);
+    box.h = Math.abs(point.y - start.y);
+    clampBox(box);
+    renderVisualEditor();
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    state.selectedLayoutElement = key;
+    state.drawingLayoutElement = null;
+    renderVisualEditor();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+};
 $("#generate-product-search").oninput = renderGenerator;
 $("#generate-select-products").onclick = () => {
   const allSelected = state.selectedProducts.size === state.data.products.length;

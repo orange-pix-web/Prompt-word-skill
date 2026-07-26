@@ -52,6 +52,30 @@ test("生成所选模板提示词", () => {
   assert.match(result, /现货直发｜厂家直发/);
 });
 
+test("支持1至3条卖点和可视化坐标", () => {
+  const templates = [{
+    enabled: true, number: "10", name: "自由布局", layout: "自定义布局", subtitleSource: "副标题",
+    points: 2, bottomSource: "底栏文案", bottomStyle: "标准单行", special: "无", netPosition: "产品附近",
+    visualLayout: { canvas: 1024, elements: {
+      title: { x: 6, y: 8, w: 42, h: 12, z: 5 },
+      point1: { x: 7, y: 35, w: 35, h: 8, z: 5 },
+      point2: { x: 7, y: 46, w: 35, h: 8, z: 5 },
+    } },
+  }];
+  const marketingRows = new Map([["10", {
+    subtitle: "科学配方", support: "日常使用", points: ["卖点一", "卖点二", "卖点三"], footer: "厂家直发",
+  }]]);
+  const markdown = generatePromptMarkdown({
+    product: { name: "测试产品", imageName: "测试产品.png", category: "猫狗", net: "100g", form: "bag" },
+    templates,
+    marketingRows,
+  });
+  assert.match(markdown, /【卖点一】【卖点二】/);
+  assert.doesNotMatch(markdown, /【卖点三】/);
+  assert.match(markdown, /1024×1024逻辑画布布局/);
+  assert.match(markdown, /主标题位于画面左侧6%/);
+});
+
 test("拒绝越界路径", () => {
   assert.throws(() => safeChildPath("D:/work", "../secret"), /超出项目目录/);
 });
