@@ -130,6 +130,7 @@
           </div>
           <div class="ai-state" id="ai-state">检测分析能力…</div>
         </div>
+        <div class="reference-mode-title"><span>方式一</span><div><h3>上传参考图自动分析</h3><p>有视觉模型时自动生成图层；未配置时仍保存参考图并生成基础草稿。</p></div></div>
         <div class="reference-workspace">
           <label class="drop-zone" id="reference-drop">
             <input type="file" id="reference-file" accept="image/png,image/jpeg,image/webp">
@@ -144,6 +145,20 @@
             <button class="btn primary" id="analyze-reference-btn">导入并分析</button>
             <div class="analysis-output" id="analysis-output">分析结果会显示在这里，并可一键带入模板编辑器。</div>
           </div>
+        </div>
+        <div class="reference-mode-title json-mode-title"><span>方式二</span><div><h3>独立导入JSON</h3><p>不需要上传参考图，也不依赖AI配置；可直接粘贴豆包、ChatGPT等工具生成的结构化JSON。</p></div></div>
+        <div class="json-import-card">
+          <div class="json-import-fields">
+            <label>模板编号<input id="json-template-number" value="10" maxlength="2"></label>
+            <label>模板名称<input id="json-template-name" value="JSON导入模板"></label>
+            <label class="json-file-label">选择JSON文件<input type="file" id="json-template-file" accept=".json,application/json"></label>
+          </div>
+          <label>粘贴JSON<textarea id="json-template-text" rows="13" placeholder='{"name":"新模板","elements":[{"type":"product","x":52,"y":18,"w":40,"h":62,"z":4}]}'></textarea></label>
+          <div class="json-import-actions">
+            <button class="btn ghost" id="fill-json-example">填入示例</button>
+            <button class="btn primary" id="import-json-template">校验并带入模板编辑器</button>
+          </div>
+          <div class="json-import-status" id="json-import-status">坐标必须使用0–100百分比；导入只创建草稿，不会直接覆盖或保存模板。</div>
         </div>
       </section>
 

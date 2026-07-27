@@ -13,6 +13,7 @@ import {
   parseProductFacts,
   parseTemplates,
   parseProductMarketing,
+  referenceJsonToTemplate,
   resolveProductMarketing,
   serializeProductMarketing,
   safeChildPath,
@@ -122,6 +123,34 @@ test("现有模板补全正式布局、底板和80%字号规则", () => {
   assert.equal(layout.elements.point1.fontRatio, 0.8);
   assert.equal(layout.elements.title.shape, "none");
   assert.equal(layout.elements.footer.shape, "rectangle");
+});
+
+test("参考图JSON可独立转换为可编辑模板图层", () => {
+  const template = referenceJsonToTemplate(`\`\`\`json
+  {
+    "name": "左右布局",
+    "elements": [
+      {"type":"title","binding":"productName","x":6,"y":8,"w":42,"h":12,"z":5,"shape":"none"},
+      {"type":"sellingPoint","binding":"point1","x":7,"y":35,"w":35,"h":8,"z":5,"shape":"rounded"},
+      {"type":"product","binding":"product1","x":53,"y":17,"w":41,"h":62,"z":4,"shape":"none"}
+    ]
+  }
+  \`\`\``, { number: "12" });
+  assert.equal(template.number, "12");
+  assert.equal(template.name, "左右布局");
+  assert.equal(template.points, 1);
+  assert.equal(template.visualLayout.elements.product.visible, true);
+  assert.equal(template.visualLayout.elements.point1.copyRegion, "侧栏卖点");
+  assert.equal(template.visualLayout.elements.footer.visible, false);
+});
+
+test("参考图JSON拒绝越界坐标和未知图层", () => {
+  assert.throws(() => referenceJsonToTemplate({
+    elements: [{ type: "product", x: 80, y: 10, w: 30, h: 50 }],
+  }), /坐标越界/);
+  assert.throws(() => referenceJsonToTemplate({
+    elements: [{ type: "price", x: 10, y: 10, w: 20, h: 10 }],
+  }), /类型.*不支持/);
 });
 
 test("支持多产品组合主图", () => {

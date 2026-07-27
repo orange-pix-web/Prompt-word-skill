@@ -18,6 +18,7 @@ import {
   parseProductFacts,
   parseTemplates,
   parseProductMarketing,
+  referenceJsonToTemplate,
   resolveProductMarketing,
   safeChildPath,
   serializeTemplates,
@@ -436,7 +437,7 @@ async function apiImportReference(body) {
   const safeName = `${Date.now()}-${path.basename(body.fileName).replace(/[\\/:*?"<>|]/g, "-")}`;
   const target = path.join(REFERENCE_ROOT, safeName);
   await fs.writeFile(target, buffer);
-  const draft = {
+  let draft = {
     number: body.number || "10",
     name: body.name || "新参考模板",
     layout: `参考图尺寸${body.width || "未知"}×${body.height || "未知"}；请确认产品位置、标题区域、卖点数量和底栏布局。`,
@@ -458,19 +459,35 @@ async function apiImportReference(body) {
           input: [{
             role: "user",
             content: [
-              { type: "input_text", text: "分析这张中文电商主图的构图，只返回简洁中文：背景、产品位置、标题位置、卖点数量与形状、底栏样式、净含量位置。不要复制图片文案。" },
+              { type: "input_text", text: `分析这张中文电商主图的构图，不要复制图片中的营销文案。只返回一个JSON对象，不要Markdown代码块或解释。
+画布统一为1024×1024，所有X、Y、W、H必须换算为0到100的百分比，并保证X+W、Y+H不超过100。
+JSON格式：
+{"name":"模板名称","description":"简短构图描述","elements":[{"type":"product|title|sellingPoint|net|footer|animalRegion|backgroundRegion|shape|customText","label":"图层名称","binding":"product1|productName|subtitle|point1|net|footer|custom","x":0,"y":0,"w":10,"h":10,"z":1,"shape":"none|rectangle|rounded|circle|ellipse|pill|parallelogram","copyRegion":"顶部卖点|侧栏卖点|底部卖点","text":"仅动物或背景要求"}]}
+必须包含主要产品、主标题；图片中存在的副标题、卖点、净含量、底栏、动物和背景区域分别建立图层。卖点binding按point1、point2递增，产品按product1、product2递增。` },
               { type: "input_image", image_url: body.dataUrl },
             ],
           }],
         }),
       });
       const result = await response.json();
-      if (response.ok && result.output_text) draft.layout = result.output_text;
-    } catch {
-      // Keep the editable local draft when remote analysis is unavailable.
+      if (!response.ok) throw new Error(result.error?.message || "视觉模型请求失败");
+      const outputText = result.output_text || result.output?.flatMap((item) => item.content || [])
+        .find((item) => item.type === "output_text")?.text;
+      if (outputText) {
+        draft = referenceJsonToTemplate(outputText, { number: body.number, name: body.name });
+        draft.analysisMode = "ai";
+      } else throw new Error("视觉模型没有返回可解析的JSON");
+    } catch (error) {
+      draft.analysisMode = "local";
+      draft.analysisError = error.message;
     }
   }
   return { ok: true, savedAs: path.relative(DATA_ROOT, target).replaceAll("\\", "/"), draft };
+}
+
+async function apiImportTemplateJson(body) {
+  const draft = referenceJsonToTemplate(body.json, { number: body.number, name: body.name });
+  return { ok: true, draft };
 }
 
 async function serveStatic(requestPath, response) {
@@ -509,6 +526,7 @@ const server = http.createServer(async (request, response) => {
         "/api/recycle/purge": apiPurgeRecycle,
         "/api/prompts/generate": apiGeneratePrompts,
         "/api/references/import": apiImportReference,
+        "/api/templates/import-json": apiImportTemplateJson,
       };
       const handler = handlers[url.pathname];
       if (!handler) return sendJson(response, 404, { error: "接口不存在" });

@@ -1017,6 +1017,57 @@ $("#reference-file").onchange = async (event) => {
   $("#reference-preview").src = url;
   $("#reference-drop").classList.add("has-image");
 };
+$("#json-template-file").onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    $("#json-template-text").value = await file.text();
+    $("#json-import-status").className = "json-import-status success";
+    $("#json-import-status").textContent = `已读取文件：${file.name}，尚未导入模板。`;
+  } catch (error) {
+    $("#json-import-status").className = "json-import-status error";
+    $("#json-import-status").textContent = `读取失败：${error.message}`;
+  }
+};
+$("#fill-json-example").onclick = () => {
+  $("#json-template-text").value = JSON.stringify({
+    name: "左右分栏示例",
+    description: "左侧标题与三条卖点，右侧产品，底部通栏。",
+    elements: [
+      { type: "title", label: "主标题", binding: "productName", x: 6, y: 10, w: 40, h: 12, z: 5, shape: "none" },
+      { type: "sellingPoint", label: "卖点1", binding: "point1", copyRegion: "侧栏卖点", x: 8, y: 35, w: 32, h: 8, z: 5, shape: "rounded" },
+      { type: "sellingPoint", label: "卖点2", binding: "point2", copyRegion: "侧栏卖点", x: 8, y: 46, w: 32, h: 8, z: 5, shape: "rounded" },
+      { type: "sellingPoint", label: "卖点3", binding: "point3", copyRegion: "侧栏卖点", x: 8, y: 57, w: 32, h: 8, z: 5, shape: "rounded" },
+      { type: "product", label: "产品", binding: "product1", x: 52, y: 17, w: 42, h: 63, z: 4, shape: "none" },
+      { type: "net", label: "净含量", binding: "net", x: 68, y: 80, w: 24, h: 6, z: 6, shape: "pill" },
+      { type: "footer", label: "底栏", binding: "footer", x: 3, y: 88, w: 94, h: 9, z: 7, shape: "rectangle" },
+    ],
+  }, null, 2);
+  $("#json-import-status").className = "json-import-status";
+  $("#json-import-status").textContent = "示例已填入，可直接校验并带入编辑器。";
+};
+$("#import-json-template").onclick = async () => {
+  const status = $("#json-import-status");
+  try {
+    const json = $("#json-template-text").value.trim();
+    if (!json) throw new Error("请粘贴JSON或选择JSON文件");
+    status.className = "json-import-status";
+    status.textContent = "正在校验JSON…";
+    const result = await api("/api/templates/import-json", { method: "POST", body: JSON.stringify({
+      json,
+      number: $("#json-template-number").value,
+      name: $("#json-template-name").value,
+    }) });
+    const count = Object.values(result.draft.visualLayout?.elements || {}).filter((box) => box.visible !== false).length;
+    status.className = "json-import-status success";
+    status.textContent = `校验通过，共识别${count}个可见图层，已带入模板编辑器。`;
+    openTemplate(null, result.draft);
+  } catch (error) {
+    status.className = "json-import-status error";
+    status.textContent = error.message;
+    toast(error.message, true);
+  }
+};
 $("#analyze-reference-btn").onclick = async () => {
   try {
     if (!state.referenceFile) throw new Error("请先选择参考图");
@@ -1026,7 +1077,12 @@ $("#analyze-reference-btn").onclick = async () => {
       name: $("#reference-name").value, number: $("#reference-number").value,
       width: state.referenceDimensions?.width, height: state.referenceDimensions?.height,
     }) });
-    $("#analysis-output").innerHTML = `${result.draft.layout}\n\n已保存：${result.savedAs}\n\n<button class="btn small" id="use-analysis">带入模板编辑器</button>`;
+    const layerCount = Object.values(result.draft.visualLayout?.elements || {}).filter((box) => box.visible !== false).length;
+    const modeText = result.draft.analysisMode === "ai"
+      ? `视觉模型已生成${layerCount}个结构化图层。`
+      : result.draft.analysisError ? `自动分析未完成：${result.draft.analysisError}\n已保留基础草稿，可继续手动编辑。`
+      : "当前为本地基础草稿。";
+    $("#analysis-output").innerHTML = `${modeText}\n${result.draft.layout}\n\n已保存：${result.savedAs}\n\n<button class="btn small" id="use-analysis">带入模板编辑器</button>`;
     $("#use-analysis").onclick = () => openTemplate(null, result.draft);
     toast("参考图已导入");
   } catch (error) { $("#analysis-output").textContent = error.message; toast(error.message, true); }
