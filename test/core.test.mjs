@@ -153,6 +153,21 @@ test("参考图JSON拒绝越界坐标和未知图层", () => {
   }), /类型.*不支持/);
 });
 
+test("参考图JSON兼容AI常见的background和animal别名", () => {
+  const template = referenceJsonToTemplate({
+    name: "家禽布局",
+    elements: [
+      { type: "background", binding: "background", x: 0, y: 0, w: 100, h: 100, z: 1, shape: "rectangle" },
+      { type: "animal", binding: "animal1", x: 48, y: 39, w: 51, h: 45, z: 2, shape: "none" },
+      { type: "product", binding: "product1", x: 57, y: 6, w: 38, h: 73, z: 4 },
+    ],
+  });
+  assert.equal(template.visualLayout.elements.backgroundRegion1.type, "backgroundRegion");
+  assert.equal(template.visualLayout.elements.backgroundRegion1.binding, "custom");
+  assert.equal(template.visualLayout.elements.animalRegion1.type, "animalRegion");
+  assert.equal(template.visualLayout.elements.animalRegion1.binding, "custom");
+});
+
 test("支持多产品组合主图", () => {
   const template = {
     enabled: true, number: "10", name: "双产品", layout: "双产品组合", points: 2,

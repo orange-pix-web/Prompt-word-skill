@@ -73,6 +73,7 @@ node server.mjs
 - JSON导入区内置可复制的AI分析提示词和标准示例，“填入示例”使用同一份格式。
 
 JSON中的`elements`可使用数组，也可使用工作台原生的`visualLayout.elements`对象。坐标`x`、`y`、`w`、`h`统一使用0–100百分比。
+导入器兼容AI常见的`background`、`animal`、`text`、`point`、`badge`等类型别名，并自动转换为工作台图层。
 
 要启用视觉模型自动分析，请在启动前设置：
 
