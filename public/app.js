@@ -5,6 +5,11 @@ const state = {
   search: "",
   selectedProducts: new Set(),
   selectedTemplates: new Set(),
+  templateGroup: "全部",
+  marketingScope: "product",
+  marketingCategory: "全部",
+  marketingProduct: null,
+  marketingSearch: "",
   editingTemplateNumber: null,
   editingVisualLayout: null,
   selectedLayoutElement: null,
@@ -128,11 +133,79 @@ function renderAll() {
 }
 
 function renderMarketingNavigation() {
-  const previousCategory = $("#marketing-category").value || state.data.categories[0];
-  $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
-  $("#marketing-category").value = state.data.categories.includes(previousCategory) ? previousCategory : state.data.categories[0];
-  fillMarketingProducts();
+  const scope = state.marketingScope;
+  $("#marketing-scope").value = scope;
+  const availableCategories = state.data.categories;
+  if (scope === "category" && !availableCategories.includes(state.marketingCategory)) {
+    state.marketingCategory = availableCategories[0] || null;
+  }
+  const visibleProducts = marketingVisibleProducts();
+  if (scope === "product" && !visibleProducts.some((item) => item.name === state.marketingProduct)) {
+    state.marketingProduct = visibleProducts[0]?.name || null;
+  }
+  renderMarketingCategoryFilters();
+  renderMarketingProductGrid();
   renderProductCopies();
+}
+
+function marketingVisibleProducts() {
+  const keyword = state.marketingSearch.trim().toLowerCase();
+  return state.data.products.filter((product) =>
+    (state.marketingCategory === "全部" || product.category === state.marketingCategory) &&
+    (!keyword || product.name.toLowerCase().includes(keyword) || product.tags.some((tag) => tag.toLowerCase().includes(keyword)))
+  );
+}
+
+function renderMarketingCategoryFilters() {
+  const scope = state.marketingScope;
+  const container = $("#marketing-category-filters");
+  const categories = scope === "product" ? ["全部", ...state.data.categories]
+    : scope === "category" ? state.data.categories : [];
+  container.innerHTML = categories.map((category) =>
+    `<button class="chip ${category === state.marketingCategory ? "active" : ""}" data-marketing-category="${category}">${category}</button>`
+  ).join("");
+  container.classList.toggle("hidden", scope === "global");
+  $("#marketing-search-wrap").classList.toggle("hidden", scope !== "product");
+  $$("[data-marketing-category]").forEach((button) => button.onclick = () => {
+    state.marketingCategory = button.dataset.marketingCategory;
+    const products = marketingVisibleProducts();
+    if (!products.some((item) => item.name === state.marketingProduct)) state.marketingProduct = products[0]?.name || null;
+    renderMarketingNavigation();
+  });
+}
+
+function productMarketingCount(product) {
+  return state.data.productMarketingEntries.filter((entry) =>
+    entry.scope === "product" && entry.product === product.name && entry.category === product.category
+  ).length;
+}
+
+function renderMarketingProductGrid() {
+  const grid = $("#marketing-product-grid");
+  const products = state.marketingScope === "product" ? marketingVisibleProducts() : [];
+  grid.classList.toggle("hidden", state.marketingScope !== "product");
+  grid.innerHTML = products.map((product) => {
+    const count = productMarketingCount(product);
+    return `
+      <article class="product-card marketing-product-card ${state.marketingProduct === product.name ? "selected" : ""}" data-marketing-product="${product.name}">
+        <span class="category-badge">${product.category}</span>
+        <div class="product-thumb"><img loading="lazy" src="${media(product.imagePath)}" alt="${product.name}"></div>
+        <div class="product-body">
+          <h3>${product.name}</h3>
+          <div class="product-meta"><span>${product.net}</span><span>${count} 条专属词</span></div>
+          <div class="tags">${product.tags.length ? product.tags.map((tag) => `<span class="tag">${tag}</span>`).join("") : `<span class="tag">待添加标签</span>`}</div>
+        </div>
+        <div class="card-foot"><button type="button">编辑营销文案</button></div>
+      </article>`;
+  }).join("") || `<div class="summary-note">没有符合条件的产品。</div>`;
+  $$("[data-marketing-product]").forEach((card) => card.onclick = () => {
+    state.marketingProduct = card.dataset.marketingProduct;
+    const product = state.data.products.find((item) => item.name === state.marketingProduct);
+    if (product) state.marketingCategory = state.marketingCategory === "全部" ? "全部" : product.category;
+    renderMarketingProductGrid();
+    renderProductCopies();
+    $("#marketing-editor-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function renderMetrics() {
@@ -543,18 +616,31 @@ function beginMoveLayoutElement(event, key, resizing) {
 }
 
 function renderTemplates() {
-  $("#template-grid").innerHTML = state.data.templates.map((template) => `
+  const groups = ["全部", ...new Set(state.data.templates.map((template) => template.group || "未分组"))];
+  if (!groups.includes(state.templateGroup)) state.templateGroup = "全部";
+  $("#template-group-filters").innerHTML = groups.map((group) =>
+    `<button class="chip ${group === state.templateGroup ? "active" : ""}" data-template-group="${group}">${group}</button>`
+  ).join("");
+  $$("[data-template-group]").forEach((button) => button.onclick = () => {
+    state.templateGroup = button.dataset.templateGroup;
+    renderTemplates();
+  });
+  const templates = state.data.templates.filter((template) =>
+    state.templateGroup === "全部" || (template.group || "未分组") === state.templateGroup
+  );
+  $("#template-grid").innerHTML = templates.map((template) => `
     <article class="template-card">
       <div class="template-preview">${wireframe(template)}</div>
       <div class="template-info">
         <div class="template-info-head"><span class="template-number">TEMPLATE ${template.number}</span><span class="enabled-pill ${template.enabled ? "" : "off"}">${template.enabled ? "已启用" : "已停用"}</span></div>
         <h3>${template.name}</h3>
+        <span class="template-group-badge">${template.group || "未分组"}</span>
         <p>${template.layout}</p>
         <div class="template-stats"><span>${template.points}条卖点</span><span>${template.bottomStyle}</span><span>${template.netPosition}</span></div>
       </div>
       <div class="template-actions"><button class="text-btn" data-toggle-template="${template.number}">${template.enabled ? "停用" : "启用"}</button><button class="btn small" data-edit-template="${template.number}">编辑与预览</button></div>
     </article>
-  `).join("");
+  `).join("") || `<div class="summary-note">该分组还没有模板。</div>`;
   $$("[data-edit-template]").forEach((button) => button.onclick = () => openTemplate(button.dataset.editTemplate));
   $$("[data-toggle-template]").forEach((button) => button.onclick = async () => {
     const template = state.data.templates.find((item) => item.number === button.dataset.toggleTemplate);
@@ -570,7 +656,7 @@ function renderGenerator() {
     <label class="check-row"><input type="checkbox" data-g-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
   `).join("");
   $("#generate-templates").innerHTML = state.data.templates.map((template) => `
-    <label class="check-row"><input type="checkbox" data-g-template="${template.number}" ${state.selectedTemplates.has(template.number) ? "checked" : ""}><span><strong>${template.number} · ${template.name}</strong><small>${template.points}条卖点 · ${template.bottomStyle}</small></span></label>
+    <label class="check-row"><input type="checkbox" data-g-template="${template.number}" ${state.selectedTemplates.has(template.number) ? "checked" : ""}><span><strong>${template.number} · ${template.name}</strong><small>${template.group || "未分组"} · ${template.points}条卖点 · ${template.bottomStyle}</small></span></label>
   `).join("");
   $$("[data-g-product]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedProducts.add(input.dataset.gProduct) : state.selectedProducts.delete(input.dataset.gProduct);
@@ -610,13 +696,16 @@ function switchView(view) {
 function openTemplate(number = null, draft = null) {
   state.editingTemplateNumber = number;
   const template = draft || state.data.templates.find((item) => item.number === number) || {
-    enabled: false, number: nextTemplateNumber(), name: "新模板", layout: "", subtitleSource: "副标题", points: 3,
+    enabled: false, number: nextTemplateNumber(), name: "新模板", group: state.templateGroup === "全部" ? "未分组" : state.templateGroup, layout: "", subtitleSource: "副标题", points: 3,
     bottomSource: "底栏文案", bottomStyle: "标准单行", special: "无", netPosition: "产品附近",
   };
   $("#template-dialog-title").textContent = number ? "编辑模板" : "添加模板";
   $("#tpl-number").value = template.number;
   $("#tpl-number").disabled = Boolean(number);
   $("#tpl-name").value = template.name;
+  const groups = [...new Set(state.data.templates.map((item) => item.group || "未分组"))];
+  $("#template-group-options").innerHTML = groups.map((group) => `<option value="${group}"></option>`).join("");
+  $("#tpl-group").value = template.group || "未分组";
   $("#tpl-layout").value = template.layout;
   $("#tpl-subtitle").value = template.subtitleSource;
   $("#tpl-points").value = template.points;
@@ -656,19 +745,15 @@ function fillPreviewProducts() {
   });
 }
 
-function fillMarketingProducts() {
-  const category = $("#marketing-category").value;
-  const products = state.data.products.filter((item) => item.category === category);
-  const previous = $("#marketing-product").value;
-  $("#marketing-product").innerHTML = products.map((item) => `<option value="${item.name}">${item.name}</option>`).join("");
-  if (products.some((item) => item.name === previous)) $("#marketing-product").value = previous;
-}
-
 function currentMarketingFilter() {
+  const selectedProduct = state.data.products.find((item) => item.name === state.marketingProduct);
+  const category = state.marketingScope === "product"
+    ? selectedProduct?.category
+    : state.marketingScope === "category" ? state.marketingCategory : "*";
   return {
-    scope: $("#marketing-scope").value,
-    category: $("#marketing-category").value,
-    product: $("#marketing-product").value,
+    scope: state.marketingScope,
+    category,
+    product: state.marketingScope === "product" ? state.marketingProduct : "*",
   };
 }
 
@@ -683,12 +768,19 @@ function filteredProductCopies() {
 
 function renderProductCopies() {
   const filter = currentMarketingFilter();
-  $("#marketing-category-field").classList.toggle("hidden", filter.scope === "global");
-  $("#marketing-product-field").classList.toggle("hidden", filter.scope !== "product");
+  const editor = $("#marketing-editor-panel");
+  const hasTarget = filter.scope === "global" || (filter.scope === "category" && filter.category) || (filter.scope === "product" && filter.product);
+  editor.classList.toggle("hidden", !hasTarget);
   const items = filteredProductCopies();
-  $("#marketing-status").textContent = filter.scope === "global" ? "正在编辑全部产品通用营销词"
-    : filter.scope === "category" ? `正在编辑【${filter.category}】分类通用营销词`
-    : `正在编辑产品【${filter.product || "未选择"}】的专属营销词`;
+  const title = filter.scope === "global" ? "全局通用营销词"
+    : filter.scope === "category" ? `${filter.category || "未选择"} · 分类通用营销词`
+    : `${filter.product || "未选择产品"} · 产品专属营销词`;
+  $("#marketing-status").textContent = filter.scope === "global" ? "当前显示全部产品均可补充使用的通用文案"
+    : filter.scope === "category" ? `当前显示【${filter.category || "未选择"}】分类内产品可补充使用的通用文案`
+    : `点击上方产品卡片，管理该产品生成主图时优先使用的专属文案`;
+  $("#marketing-editor-eyebrow").textContent = filter.scope === "global" ? "GLOBAL COPY" : filter.scope === "category" ? "CATEGORY COPY" : "PRODUCT COPY";
+  $("#marketing-editor-title").textContent = title;
+  $("#marketing-editor-count").textContent = `${items.length} 条文案`;
   const regions = ["顶部卖点","侧栏卖点","底部卖点","副标题","辅助文案","底栏文案","不限位置"];
   $("#product-copy-list").innerHTML = items.map(({ entry, index }) => `
     <div class="product-copy-row">
@@ -710,6 +802,7 @@ function renderProductCopies() {
     state.data.productMarketingEntries.splice(index, 1);
     state.pendingDeletedMarketing.push({ entry: structuredClone(entry), index });
     renderProductCopies();
+    renderMarketingProductGrid();
     toast("营销词已删除，保存后进入回收站", false, {
       label: "撤销",
       run: () => {
@@ -718,6 +811,7 @@ function renderProductCopies() {
         if (pendingIndex >= 0) state.pendingDeletedMarketing.splice(pendingIndex, 1);
         state.data.productMarketingEntries.splice(Math.min(index, state.data.productMarketingEntries.length), 0, entry);
         renderProductCopies();
+        renderMarketingProductGrid();
       },
     });
   });
@@ -756,6 +850,8 @@ function renderRecycleBin() {
 
 function addProductCopy() {
   const filter = currentMarketingFilter();
+  if (filter.scope === "product" && !filter.product) return toast("请先选择一个产品", true);
+  if (filter.scope === "category" && !filter.category) return toast("请先选择一个分类", true);
   state.data.productMarketingEntries.push({
     scope: filter.scope,
     category: filter.scope === "global" ? "*" : filter.category,
@@ -766,6 +862,7 @@ function addProductCopy() {
     enabled: true,
   });
   renderProductCopies();
+  renderMarketingProductGrid();
 }
 
 function nextTemplateNumber() {
@@ -778,6 +875,7 @@ function templateFromForm() {
     enabled: $("#tpl-enabled").checked,
     number: $("#tpl-number").value.trim().padStart(2, "0"),
     name: $("#tpl-name").value.trim(),
+    group: $("#tpl-group").value.trim() || "未分组",
     layout: $("#tpl-layout").value.trim(),
     subtitleSource: $("#tpl-subtitle").value,
     points: Number($("#tpl-points").value),
@@ -971,9 +1069,21 @@ $("#preview-category").onchange = (event) => {
   fillPreviewProducts();
   renderVisualEditor();
 };
-$("#marketing-scope").onchange = renderProductCopies;
-$("#marketing-category").onchange = () => { fillMarketingProducts(); renderProductCopies(); };
-$("#marketing-product").onchange = renderProductCopies;
+$("#marketing-scope").onchange = (event) => {
+  state.marketingScope = event.target.value;
+  if (state.marketingScope === "product") state.marketingCategory = "全部";
+  if (state.marketingScope === "category" && !state.data.categories.includes(state.marketingCategory)) {
+    state.marketingCategory = state.data.categories[0] || null;
+  }
+  renderMarketingNavigation();
+};
+$("#marketing-product-search").oninput = (event) => {
+  state.marketingSearch = event.target.value;
+  const products = marketingVisibleProducts();
+  if (!products.some((item) => item.name === state.marketingProduct)) state.marketingProduct = products[0]?.name || null;
+  renderMarketingProductGrid();
+  renderProductCopies();
+};
 $("#add-product-copy").onclick = addProductCopy;
 $("#save-marketing-page").onclick = async () => {
   try {

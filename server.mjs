@@ -39,6 +39,7 @@ const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
 const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
+const TEMPLATE_GROUPS_FILE = path.join(META_ROOT, "template-groups.json");
 const RECYCLE_FILE = path.join(META_ROOT, "recycle-bin.json");
 const BACKUP_ROOT = path.join(META_ROOT, "backups");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
@@ -104,7 +105,7 @@ async function addRecycleItems(items) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts, recycleBin] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts, templateGroups, recycleBin] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
@@ -112,10 +113,12 @@ async function loadState() {
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
+    readJson(TEMPLATE_GROUPS_FILE, {}),
     readRecycleBin(),
   ]);
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
+    group: String(templateGroups[template.number] || "未分组"),
     visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
   }));
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
@@ -271,12 +274,16 @@ async function apiSaveTemplates(body) {
   }
   await backupFile(TEMPLATE_FILE, "主图模板配置.md");
   await backupFile(LAYOUT_FILE, "template-layouts.json");
+  await backupFile(TEMPLATE_GROUPS_FILE, "template-groups.json");
   await fs.writeFile(TEMPLATE_FILE, serializeTemplates(body.templates), "utf8");
   await fs.mkdir(META_ROOT, { recursive: true });
   const layouts = Object.fromEntries(body.templates
     .filter((template) => template.visualLayout)
     .map((template) => [template.number, template.visualLayout]));
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
+  const templateGroups = Object.fromEntries(body.templates
+    .map((template) => [template.number, String(template.group || "未分组").trim() || "未分组"]));
+  await fs.writeFile(TEMPLATE_GROUPS_FILE, `${JSON.stringify(templateGroups, null, 2)}\n`, "utf8");
   const deletedElements = Array.isArray(body.deletedElements) ? body.deletedElements : [];
   await addRecycleItems(deletedElements.map((item) => ({
     type: "template-element",

@@ -65,6 +65,9 @@
           <div><h2>模板中心</h2><p>构图、文字层级和底栏规则独立管理，预览不会消耗生图额度。</p></div>
           <button class="btn primary" id="new-template-btn">＋ 可视化添加模板</button>
         </div>
+        <div class="toolbar template-group-toolbar">
+          <div class="filter-chips" id="template-group-filters"></div>
+        </div>
         <div class="template-grid" id="template-grid"></div>
       </section>
 
@@ -73,14 +76,24 @@
           <div><h2>营销文案</h2><p>按具体产品、产品分类或全局范围管理营销词；模板只决定使用数量和显示位置。</p></div>
           <button class="btn primary" id="save-marketing-page">保存营销文案</button>
         </div>
-        <div class="marketing-page">
-          <aside class="marketing-page-nav">
-            <label>文案范围<select id="marketing-scope"><option value="product">产品专属</option><option value="category">分类通用</option><option value="global">全局通用</option></select></label>
-            <label id="marketing-category-field">产品分类<select id="marketing-category"></select></label>
-            <label id="marketing-product-field">具体产品<select id="marketing-product"></select></label>
-            <div class="marketing-status" id="marketing-status"></div>
-          </aside>
-          <div class="panel">
+        <div class="marketing-manager">
+          <div class="toolbar marketing-card-toolbar">
+            <label class="marketing-scope-control">文案范围
+              <select id="marketing-scope"><option value="product">产品专属</option><option value="category">分类通用</option><option value="global">全局通用</option></select>
+            </label>
+            <div class="search-wrap" id="marketing-search-wrap"><span>⌕</span><input id="marketing-product-search" placeholder="搜索产品名称或标签"></div>
+            <div class="filter-chips" id="marketing-category-filters"></div>
+          </div>
+          <div class="marketing-status" id="marketing-status"></div>
+          <div class="product-grid marketing-product-grid" id="marketing-product-grid"></div>
+          <div class="panel marketing-editor-panel" id="marketing-editor-panel">
+            <div class="marketing-editor-heading">
+              <div>
+                <span class="eyebrow" id="marketing-editor-eyebrow">PRODUCT COPY</span>
+                <h3 id="marketing-editor-title">选择产品后编辑营销词</h3>
+              </div>
+              <span id="marketing-editor-count"></span>
+            </div>
             <div class="marketing-binding-help">模板只决定文案数量和位置。生成时优先使用产品专属词，不足时自动补充分类通用词和全局通用词。</div>
             <div class="product-copy-list" id="product-copy-list"></div>
             <button type="button" class="btn ghost wide" id="add-product-copy">＋ 添加营销词</button>
@@ -213,6 +226,7 @@
         <div class="form-grid">
           <label>模板编号<input id="tpl-number" maxlength="2" required></label>
           <label>模板名称<input id="tpl-name" required></label>
+          <label class="wide">模板分组<input id="tpl-group" list="template-group-options" placeholder="例如：禽类模板、瓶装模板、促销模板"><datalist id="template-group-options"></datalist></label>
           <label>副标题来源<select id="tpl-subtitle"><option>副标题</option><option>辅助文案</option><option>自动用量</option><option>无</option></select></label>
           <label>默认营销卖点数量<input id="tpl-points" type="number" min="0" max="20" value="3"></label>
           <label>底栏来源<select id="tpl-bottom-source"><option>底栏文案</option><option>辅助文案+底栏文案</option><option>自动用量</option></select></label>
