@@ -19,6 +19,7 @@
       </div>
       <nav id="nav">
         <button class="nav-item active" data-view="products"><span>◫</span>产品管理</button>
+        <button class="nav-item" data-view="marketing"><span>✎</span>营销文案</button>
         <button class="nav-item" data-view="templates"><span>◇</span>模板中心</button>
         <button class="nav-item" data-view="generate"><span>✦</span>提示词生成</button>
         <button class="nav-item" data-view="references"><span>◎</span>参考图分析</button>
@@ -64,6 +65,29 @@
           <button class="btn primary" id="new-template-btn">＋ 可视化添加模板</button>
         </div>
         <div class="template-grid" id="template-grid"></div>
+      </section>
+
+      <section class="view" id="view-marketing">
+        <div class="section-head">
+          <div><h2>营销文案</h2><p>独立管理分类、模板及多产品卖点绑定，布局编辑不会改动这里的文字。</p></div>
+          <button class="btn primary" id="save-marketing-page">保存营销文案</button>
+        </div>
+        <div class="marketing-page">
+          <aside class="marketing-page-nav">
+            <label>产品分类<select id="marketing-category"></select></label>
+            <label>主图模板<select id="marketing-template"></select></label>
+            <div class="marketing-status" id="marketing-status"></div>
+          </aside>
+          <div class="marketing-form panel">
+            <label>副标题<input id="marketing-subtitle"></label>
+            <label>辅助文案<input id="marketing-support"></label>
+            <div class="wide marketing-binding-help">每条卖点可勾选“全部产品”或产品1～产品6；生成多产品主图时会写入对应关系。</div>
+            <label class="wide">营销卖点</label>
+            <div class="marketing-points wide" id="marketing-points"></div>
+            <button type="button" class="btn ghost wide" id="add-marketing-point">＋ 添加一条卖点</button>
+            <label class="wide">底栏文案<input id="marketing-footer"></label>
+          </div>
+        </div>
       </section>
 
       <section class="view" id="view-generate">
@@ -131,7 +155,13 @@
     <form method="dialog" class="dialog-card" id="product-form">
       <div class="dialog-head"><div><p class="eyebrow">NEW PRODUCT</p><h2>添加产品</h2></div><button value="cancel" class="icon-btn">×</button></div>
       <div class="form-grid">
-        <label class="wide">产品图片<input type="file" id="product-file" accept="image/png,image/jpeg,image/webp" required></label>
+        <label class="wide">创建方式<select id="product-create-mode"><option value="upload">上传完整产品图</option><option value="style">使用透明包装模板</option></select></label>
+        <label class="wide" id="product-file-field">产品图片<input type="file" id="product-file" accept="image/png,image/jpeg,image/webp"></label>
+        <div class="wide product-style-builder" id="product-style-builder">
+          <div><strong>选择包装样式</strong><div class="style-picker" id="package-style-picker"></div></div>
+          <div><strong>选择商标</strong><div class="style-picker" id="logo-style-picker"></div></div>
+          <div class="styled-product-preview" id="styled-product-preview"><span>选择包装模板后预览</span></div>
+        </div>
         <label>产品名称<input id="product-name" required></label>
         <label>所属分类<select id="product-category"></select></label>
         <label>净含量<input id="product-net" placeholder="例如 100g" required></label>
@@ -161,12 +191,12 @@
         <div class="visual-editor">
           <div class="visual-editor-head">
             <div><strong>1024×1024 通用图层画布</strong><small>添加任意数量的产品、卖点、文字、动物或背景区域，再在画布中拖出形状。</small></div>
-            <div class="preview-actions"><button type="button" class="text-btn" id="edit-marketing-btn">编辑营销文案</button><button type="button" class="text-btn" id="reset-layout">恢复推荐布局</button></div>
+            <div class="preview-actions"><button type="button" class="text-btn" id="reset-layout">恢复推荐布局</button></div>
           </div>
           <div class="preview-context">
             <label>预览分类<select id="preview-category"></select></label>
-            <label>示例产品<select id="preview-product"></select></label>
-            <small>画布将显示当前模板对应的真实营销词，仅用于预览，不会写死到布局。</small>
+            <div><span class="preview-label">示例产品（可多选）</span><div class="preview-product-list" id="preview-products"></div></div>
+            <small>产品框可绑定产品1～产品6；卖点对应关系在左侧“营销文案”中设置。</small>
           </div>
           <div class="element-palette" id="element-palette"></div>
           <div class="layout-canvas" id="layout-canvas"></div>
@@ -177,26 +207,6 @@
       </div>
       <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
     </form>
-  </dialog>
-
-  <dialog id="marketing-dialog">
-    <div class="dialog-card marketing-dialog-card">
-      <div class="dialog-head"><div><p class="eyebrow">MARKETING COPY</p><h2>营销文案编辑</h2></div><button class="icon-btn" id="close-marketing">×</button></div>
-      <div class="marketing-toolbar">
-        <label>产品分类<select id="marketing-category"></select></label>
-        <label>模板<select id="marketing-template"></select></label>
-        <div class="marketing-status" id="marketing-status"></div>
-      </div>
-      <div class="marketing-form">
-        <label>副标题<input id="marketing-subtitle"></label>
-        <label>辅助文案<input id="marketing-support"></label>
-        <label class="wide">营销卖点</label>
-        <div class="marketing-points wide" id="marketing-points"></div>
-        <button type="button" class="btn ghost wide" id="add-marketing-point">＋ 添加一条卖点</button>
-        <label class="wide">底栏文案<input id="marketing-footer"></label>
-      </div>
-      <div class="dialog-actions"><button type="button" class="btn ghost" id="cancel-marketing">取消</button><button type="button" class="btn primary" id="save-marketing">保存营销文案</button></div>
-    </div>
   </dialog>
 
   <dialog id="product-detail-dialog">

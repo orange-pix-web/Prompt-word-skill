@@ -25,6 +25,7 @@ import {
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = path.resolve(process.env.PROMPT_DATA_ROOT || path.join(APP_ROOT, ".."));
 const PRODUCT_ROOT = path.join(DATA_ROOT, "产品图");
+const PRODUCT_STYLE_ROOT = path.join(PRODUCT_ROOT, "产品模板");
 const TEMPLATE_FILE = path.join(DATA_ROOT, "主图模板配置", "主图模板配置.md");
 const MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "主图模板营销词配置.md");
 const MARKETING_EXTRAS_FILE = path.join(DATA_ROOT, "营销文案", "扩展营销卖点配置.md");
@@ -32,6 +33,7 @@ const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
 const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
+const MARKETING_BINDINGS_FILE = path.join(META_ROOT, "marketing-bindings.json");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const PORT = Number(process.env.PORT || 4178);
@@ -62,13 +64,14 @@ async function saveMeta(meta) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, marketingExtrasText, scriptText, meta, layouts] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, scriptText, meta, layouts, marketingBindings] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
+    readJson(MARKETING_BINDINGS_FILE, {}),
   ]);
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
@@ -76,7 +79,21 @@ async function loadState() {
   }));
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
   const facts = parseProductFacts(scriptText);
-  const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true })).filter((entry) => entry.isDirectory());
+  const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== "产品模板");
+  const styleEntries = await fs.readdir(PRODUCT_STYLE_ROOT, { withFileTypes: true }).catch(() => []);
+  const productStyles = await Promise.all(styleEntries
+    .filter((entry) => entry.isFile() && IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+    .map(async (entry) => {
+      const stats = await fs.stat(path.join(PRODUCT_STYLE_ROOT, entry.name));
+      return {
+        name: path.basename(entry.name, path.extname(entry.name)),
+        fileName: entry.name,
+        imagePath: path.relative(DATA_ROOT, path.join(PRODUCT_STYLE_ROOT, entry.name)).replaceAll("\\", "/"),
+        kind: /牧德旺|logo|商标/i.test(entry.name) ? "logo" : "package",
+        size: stats.size,
+      };
+    }));
   const products = [];
   for (const categoryEntry of categoryEntries) {
     const categoryPath = path.join(PRODUCT_ROOT, categoryEntry.name);
@@ -106,9 +123,11 @@ async function loadState() {
     categories: categoryEntries.map((entry) => entry.name).sort((a, b) => a.localeCompare(b, "zh-CN")),
     products,
     templates,
+    productStyles,
     marketingCoverage: Object.fromEntries([...marketing].map(([group, rows]) => [group, rows.size])),
     marketingRows: [...marketing].flatMap(([category, rows]) => [...rows].map(([number, copy]) => ({
       category, number, subtitle: copy.subtitle, support: copy.support, points: copy.points, footer: copy.footer,
+      pointTargets: marketingBindings[category]?.[number] || copy.points.map(() => ["all"]),
     }))),
     aiAnalysisAvailable: Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_VISION_MODEL),
   };
@@ -219,7 +238,7 @@ async function apiSaveTemplates(body) {
 async function apiSaveMarketing(body) {
   if (!Array.isArray(body.rows)) throw new Error("营销文案数据无效");
   const knownCategories = new Set((await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+    .filter((entry) => entry.isDirectory() && entry.name !== "产品模板").map((entry) => entry.name));
   const knownTemplates = new Set(parseTemplates(await fs.readFile(TEMPLATE_FILE, "utf8")).map((item) => item.number));
   const seen = new Set();
   for (const row of body.rows) {
@@ -235,6 +254,15 @@ async function apiSaveMarketing(body) {
   }
   await fs.writeFile(MARKETING_FILE, serializeMarketing(body.rows), "utf8");
   await fs.writeFile(MARKETING_EXTRAS_FILE, serializeMarketingExtras(body.rows), "utf8");
+  const bindings = {};
+  for (const row of body.rows) {
+    bindings[row.category] ||= {};
+    bindings[row.category][row.number] = (row.points || []).map((_, index) => {
+      const targets = row.pointTargets?.[index];
+      return Array.isArray(targets) && targets.length ? targets.map(String) : ["all"];
+    });
+  }
+  await fs.writeFile(MARKETING_BINDINGS_FILE, `${JSON.stringify(bindings, null, 2)}\n`, "utf8");
   return { ok: true };
 }
 
@@ -248,6 +276,12 @@ async function apiGeneratePrompts(body) {
     parseMarketing(await fs.readFile(MARKETING_FILE, "utf8")),
     parseMarketingExtras(await fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => "")),
   );
+  const marketingBindings = await readJson(MARKETING_BINDINGS_FILE, {});
+  for (const [category, rows] of marketing) {
+    for (const [number, copy] of rows) {
+      copy.pointTargets = marketingBindings[category]?.[number] || copy.points.map(() => ["all"]);
+    }
+  }
   const generated = [];
   const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
   if (body.mode === "combined") {

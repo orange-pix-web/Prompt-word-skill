@@ -105,7 +105,7 @@ test("现有模板补全正式布局、底板和80%字号规则", () => {
 
 test("支持多产品组合主图", () => {
   const template = {
-    enabled: true, number: "10", name: "双产品", layout: "双产品组合", points: 0,
+    enabled: true, number: "10", name: "双产品", layout: "双产品组合", points: 2,
     visualLayout: { elements: {
       product1: { type: "product", label: "产品1", x: 8, y: 20, w: 38, h: 60, z: 4, shape: "none" },
       product2: { type: "product", label: "产品2", x: 54, y: 20, w: 38, h: 60, z: 4, shape: "none" },
@@ -118,11 +118,15 @@ test("支持多产品组合主图", () => {
       { name: "瓶装产品", imageName: "瓶装产品.png", category: "鸡鸭鹅禽类" },
     ],
     templates: [template],
-    marketingByCategory: new Map(),
+    marketingByCategory: new Map([["鸡鸭鹅禽类", new Map([["10", {
+      points: ["共同卖点", "瓶装专属"], pointTargets: [["all"], ["product2"]], footer: "组合常备",
+    }]])]]),
   });
   assert.match(markdown, /【袋装产品】、【瓶装产品】/);
   assert.match(markdown, /产品1位于画面左侧8%/);
   assert.match(markdown, /鸡鸭鹅背景/);
+  assert.match(markdown, /【共同卖点】用于全部产品/);
+  assert.match(markdown, /【瓶装专属】绑定产品2【瓶装产品】/);
 });
 
 test("拒绝越界路径", () => {

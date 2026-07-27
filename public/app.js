@@ -10,7 +10,9 @@ const state = {
   selectedLayoutElement: null,
   drawingLayoutElement: null,
   previewCategory: null,
-  previewProduct: null,
+  previewProducts: [],
+  selectedPackageStyle: null,
+  selectedLogoStyle: null,
   editingMarketingKey: null,
   marketingDraft: null,
   referenceFile: null,
@@ -61,7 +63,18 @@ function renderAll() {
   renderTemplates();
   renderGenerator();
   fillCategorySelects();
+  renderMarketingNavigation();
   $("#ai-state").textContent = state.data.aiAnalysisAvailable ? "AI视觉分析已启用" : "本地草稿模式";
+}
+
+function renderMarketingNavigation() {
+  const previousCategory = $("#marketing-category").value || state.data.categories[0];
+  const previousTemplate = $("#marketing-template").value || state.data.templates[0]?.number;
+  $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
+  $("#marketing-template").innerHTML = state.data.templates.map((item) => `<option value="${item.number}">${item.number} · ${item.name}</option>`).join("");
+  $("#marketing-category").value = state.data.categories.includes(previousCategory) ? previousCategory : state.data.categories[0];
+  $("#marketing-template").value = state.data.templates.some((item) => item.number === previousTemplate) ? previousTemplate : state.data.templates[0]?.number;
+  loadMarketingForm();
 }
 
 function renderMetrics() {
@@ -201,12 +214,20 @@ function currentPreviewCopy() {
 
 function currentPreviewProduct() {
   const products = state.data?.products?.filter((item) => item.category === state.previewCategory) || [];
-  return products.find((item) => item.name === state.previewProduct) || products[0] || state.data?.products?.[0] || null;
+  return products.find((item) => item.name === state.previewProducts[0]) || products[0] || state.data?.products?.[0] || null;
+}
+
+function previewProductForBox(box = {}) {
+  const match = String(box.binding || "").match(/^product(\d+)$/);
+  const slot = match ? Number(match[1]) - 1 : 0;
+  const name = state.previewProducts[slot];
+  return state.data?.products?.find((item) => item.name === name) || (slot === 0 ? currentPreviewProduct() : null);
 }
 
 function resolvedLayoutText(key, box = {}) {
   const copy = currentPreviewCopy();
-  const product = currentPreviewProduct();
+  const product = box.type === "product" ? previewProductForBox(box) : currentPreviewProduct();
+  if (box.type === "product") return product?.name || box.label || "产品";
   if (box.binding === "productName") return product?.name || "产品名称";
   if (box.binding === "subtitle") return copy?.subtitle || "副标题";
   if (box.binding === "support") return copy?.support || "辅助文案";
@@ -228,7 +249,8 @@ function normalizeVisualLayout(layout) {
     box.type ||= inferElementType(key);
     box.label ||= layoutElementLabel(key, box);
     box.shape ||= box.type === "product" ? "none" : box.type === "animalRegion" || box.type === "backgroundRegion" ? "rectangle" : "rounded";
-    box.binding ||= key === "title" ? "productName" : key === "subtitle" ? "subtitle" : key.startsWith("point") ? key : key === "net" ? "net" : key === "footer" ? "footer" : "custom";
+    box.binding ||= key.startsWith("product") ? `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}` : key === "title" ? "productName" : key === "subtitle" ? "subtitle" : key.startsWith("point") ? key : key === "net" ? "net" : key === "footer" ? "footer" : "custom";
+    if (box.type === "product" && box.binding === "custom") box.binding = `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}`;
     if (box.type !== "product" && box.fontRatio == null) box.fontRatio = 0.8;
     box.text ||= box.type === "animalRegion" ? "与产品分类相符的真实动物" : box.type === "backgroundRegion" ? "真实干净的使用场景" : "";
     clampBox(box);
@@ -238,7 +260,7 @@ function normalizeVisualLayout(layout) {
 
 function nextElementKey(type) {
   const elements = state.editingVisualLayout.elements;
-  let index = 1;
+  let index = type === "product" && elements.product ? 2 : 1;
   while (elements[`${type}${index}`]) index += 1;
   return `${type}${index}`;
 }
@@ -321,7 +343,11 @@ function renderVisualEditor() {
     .sort((a, b) => (a[1].z || 1) - (b[1].z || 1))
     .map(([key, box]) => {
       const fontSize = box.type === "product" ? "" : `font-size:clamp(8px,${Math.max(0.1, box.h * (box.fontRatio ?? 0.8))}cqw,72px);`;
-      return `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1};${fontSize}"><span class="layout-element-text">${resolvedLayoutText(key, box)}</span><i class="resize-handle"></i></div>`;
+      const previewProduct = box.type === "product" ? previewProductForBox(box) : null;
+      const content = previewProduct
+        ? `<img class="layout-product-image" src="${media(previewProduct.imagePath)}" alt=""><span class="layout-product-caption">${previewProduct.name}</span>`
+        : `<span class="layout-element-text">${resolvedLayoutText(key, box)}</span>`;
+      return `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1};${fontSize}">${content}<i class="resize-handle"></i></div>`;
     })
     .join("");
   renderLayoutProperties();
@@ -346,7 +372,7 @@ function renderLayoutProperties() {
   const shapeOptions = ["none","rectangle","rounded","circle","ellipse","pill","parallelogram"].map((shape) => `<option value="${shape}" ${box.shape === shape ? "selected" : ""}>${({none:"无底板",rectangle:"直角矩形",rounded:"圆角矩形",circle:"圆形",ellipse:"椭圆",pill:"胶囊",parallelogram:"平行四边形"})[shape]}</option>`).join("");
   const copy = currentPreviewCopy();
   const pointCount = Math.max(3, copy?.points?.length || 0, Number($("#tpl-points").value) || 0);
-  const bindingItems = [
+  const bindingItems = box.type === "product" ? Array.from({length: 6}, (_, index) => [`product${index + 1}`, `产品${index + 1}${state.previewProducts[index] ? `｜${state.previewProducts[index]}` : ""}`]) : [
     ["productName", "产品名称"], ["subtitle", "副标题"], ["support", "辅助文案"],
     ...Array.from({ length: pointCount }, (_, index) => [`point${index + 1}`, `营销卖点${index + 1}`]),
     ["net", "净含量"], ["footer", "底栏文案"], ["custom", "自定义内容"],
@@ -475,7 +501,7 @@ function fillCategorySelects() {
 
 function switchView(view) {
   state.view = view;
-  const labels = { products: "产品管理", templates: "模板中心", generate: "提示词生成", references: "参考图分析" };
+  const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", references: "参考图分析" };
   $("#page-title").textContent = labels[view];
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `view-${view}`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -513,25 +539,34 @@ function openTemplate(number = null, draft = null) {
 
 function fillPreviewProducts() {
   const products = state.data.products.filter((item) => item.category === state.previewCategory);
-  if (!products.some((item) => item.name === state.previewProduct)) state.previewProduct = products[0]?.name || null;
-  $("#preview-product").innerHTML = products.map((product) => `<option value="${product.name}">${product.name} · ${product.net}</option>`).join("")
-    || `<option value="">该分类暂无产品</option>`;
-  $("#preview-product").value = state.previewProduct || "";
+  state.previewProducts = state.previewProducts.filter((name) => products.some((item) => item.name === name));
+  if (!state.previewProducts.length && products[0]) state.previewProducts = [products[0].name];
+  $("#preview-products").innerHTML = products.map((product, index) => `
+    <label class="preview-product-chip"><input type="checkbox" value="${product.name}" ${state.previewProducts.includes(product.name) ? "checked" : ""}>
+      <img src="${media(product.imagePath)}" alt=""><span>${product.name}</span>
+    </label>`).join("") || `<span>该分类暂无产品</span>`;
+  $$("#preview-products input").forEach((input) => input.onchange = () => {
+    if (input.checked) {
+      if (state.previewProducts.length >= 6) { input.checked = false; return toast("最多预览6个产品", true); }
+      state.previewProducts.push(input.value);
+    } else state.previewProducts = state.previewProducts.filter((name) => name !== input.value);
+    renderVisualEditor();
+  });
 }
 
 function marketingRow(category, number) {
   return state.data.marketingRows.find((row) => row.category === category && row.number === number);
 }
 
-function openMarketingEditor() {
-  const number = $("#tpl-number").value.trim().padStart(2, "0");
-  const category = state.previewCategory || state.data.categories[0];
+function openMarketingEditor(number = null, category = null) {
+  number ||= state.data.templates[0]?.number;
+  category ||= state.previewCategory || state.data.categories[0];
   $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
   $("#marketing-template").innerHTML = state.data.templates.map((item) => `<option value="${item.number}">${item.number} · ${item.name}</option>`).join("");
   $("#marketing-category").value = category;
   $("#marketing-template").value = state.data.templates.some((item) => item.number === number) ? number : state.data.templates[0]?.number;
   loadMarketingForm();
-  $("#marketing-dialog").showModal();
+  switchView("marketing");
 }
 
 function commitMarketingFormToDraft() {
@@ -539,15 +574,19 @@ function commitMarketingFormToDraft() {
   state.marketingDraft.subtitle = $("#marketing-subtitle").value.trim();
   state.marketingDraft.support = $("#marketing-support").value.trim();
   state.marketingDraft.footer = $("#marketing-footer").value.trim();
-  state.marketingDraft.points = $$("#marketing-points input").map((input) => input.value.trim());
+  state.marketingDraft.points = $$("[data-marketing-point]").map((input) => input.value.trim());
+  state.marketingDraft.pointTargets = state.marketingDraft.points.map((_, index) =>
+    $$(`[data-target-index="${index}"]:checked`).map((input) => input.value)
+  );
 }
 
 function loadMarketingForm() {
   const category = $("#marketing-category").value;
   const number = $("#marketing-template").value;
-  const source = marketingRow(category, number) || { category, number, subtitle: "", support: "", points: ["", "", ""], footer: "" };
+  const source = marketingRow(category, number) || { category, number, subtitle: "", support: "", points: ["", "", ""], pointTargets: [["all"],["all"],["all"]], footer: "" };
   state.editingMarketingKey = `${category}\0${number}`;
   state.marketingDraft = structuredClone(source);
+  state.marketingDraft.pointTargets ||= source.points.map(() => ["all"]);
   $("#marketing-subtitle").value = source.subtitle || "";
   $("#marketing-support").value = source.support || "";
   $("#marketing-footer").value = source.footer || "";
@@ -557,18 +596,32 @@ function loadMarketingForm() {
 
 function renderMarketingPoints() {
   const points = state.marketingDraft?.points || [];
-  $("#marketing-points").innerHTML = points.map((point, index) => `
+  $("#marketing-points").innerHTML = points.map((point, index) => {
+    const targets = state.marketingDraft.pointTargets?.[index] || ["all"];
+    const targetChecks = [["all","全部"], ...Array.from({length:6},(_,slot)=>[`product${slot+1}`,`产品${slot+1}`])]
+      .map(([value,label]) => `<label><input type="checkbox" data-target-index="${index}" value="${value}" ${targets.includes(value) ? "checked" : ""}>${label}</label>`).join("");
+    return `
     <div class="marketing-point-row">
       <span>${index + 1}</span><input value="${point}" data-marketing-point="${index}" placeholder="输入第${index + 1}条卖点">
       <button type="button" data-point-up="${index}" title="上移">↑</button>
       <button type="button" data-point-down="${index}" title="下移">↓</button>
       <button type="button" class="remove" data-point-remove="${index}" title="删除">×</button>
-    </div>`).join("");
+      <div class="point-targets">${targetChecks}</div>
+    </div>`;
+  }).join("");
   $$("[data-marketing-point]").forEach((input) => input.oninput = () => state.marketingDraft.points[Number(input.dataset.marketingPoint)] = input.value);
+  $$("[data-target-index]").forEach((input) => input.onchange = () => {
+    const group = $$(`[data-target-index="${input.dataset.targetIndex}"]`);
+    if (input.checked && input.value === "all") group.filter((item) => item !== input).forEach((item) => item.checked = false);
+    if (input.checked && input.value !== "all") group.find((item) => item.value === "all").checked = false;
+    if (!group.some((item) => item.checked)) group.find((item) => item.value === "all").checked = true;
+  });
   $$("[data-point-up]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointUp), -1));
   $$("[data-point-down]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointDown), 1));
   $$("[data-point-remove]").forEach((button) => button.onclick = () => {
-    state.marketingDraft.points.splice(Number(button.dataset.pointRemove), 1);
+    const index = Number(button.dataset.pointRemove);
+    state.marketingDraft.points.splice(index, 1);
+    state.marketingDraft.pointTargets?.splice(index, 1);
     renderMarketingPoints();
   });
 }
@@ -577,6 +630,7 @@ function moveMarketingPoint(index, offset) {
   const target = index + offset;
   if (target < 0 || target >= state.marketingDraft.points.length) return;
   [state.marketingDraft.points[index], state.marketingDraft.points[target]] = [state.marketingDraft.points[target], state.marketingDraft.points[index]];
+  if (state.marketingDraft.pointTargets) [state.marketingDraft.pointTargets[index], state.marketingDraft.pointTargets[target]] = [state.marketingDraft.pointTargets[target], state.marketingDraft.pointTargets[index]];
   renderMarketingPoints();
 }
 
@@ -642,6 +696,60 @@ function fileToDataUrl(file) {
   });
 }
 
+function renderProductStyleBuilder() {
+  const packages = state.data.productStyles.filter((item) => item.kind === "package");
+  const logos = state.data.productStyles.filter((item) => item.kind === "logo");
+  state.selectedPackageStyle ||= packages[0]?.imagePath || null;
+  state.selectedLogoStyle ||= logos[0]?.imagePath || null;
+  const cards = (items, selected, attr) => items.map((item) => `
+    <button type="button" class="style-card ${selected === item.imagePath ? "selected" : ""}" ${attr}="${item.imagePath}">
+      <img src="${media(item.imagePath)}" alt=""><span>${item.name}</span>
+    </button>`).join("");
+  $("#package-style-picker").innerHTML = cards(packages, state.selectedPackageStyle, "data-package-style");
+  $("#logo-style-picker").innerHTML = `<button type="button" class="style-card ${!state.selectedLogoStyle ? "selected" : ""}" data-logo-style=""><span>不加商标</span></button>`
+    + cards(logos, state.selectedLogoStyle, "data-logo-style");
+  $$("[data-package-style]").forEach((button) => button.onclick = () => { state.selectedPackageStyle = button.dataset.packageStyle; renderProductStyleBuilder(); });
+  $$("[data-logo-style]").forEach((button) => button.onclick = () => { state.selectedLogoStyle = button.dataset.logoStyle || null; renderProductStyleBuilder(); });
+  const name = $("#product-name").value.trim() || "产品名称";
+  const net = $("#product-net").value.trim() || "净含量";
+  $("#styled-product-preview").innerHTML = state.selectedPackageStyle
+    ? `<img class="style-base" src="${media(state.selectedPackageStyle)}" alt="">${state.selectedLogoStyle ? `<img class="style-logo" src="${media(state.selectedLogoStyle)}" alt="">` : ""}<strong>${name}</strong><small>${net}</small>`
+    : `<span>产品模板文件夹中暂无包装素材</span>`;
+}
+
+function loadCanvasImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+async function styledProductDataUrl() {
+  if (!state.selectedPackageStyle) throw new Error("请选择包装样式");
+  const canvas = document.createElement("canvas");
+  canvas.width = 1400; canvas.height = 1400;
+  const ctx = canvas.getContext("2d");
+  const base = await loadCanvasImage(media(state.selectedPackageStyle));
+  const scale = Math.min(1180 / base.width, 1180 / base.height);
+  const w = base.width * scale, h = base.height * scale;
+  const x = (canvas.width - w) / 2, y = (canvas.height - h) / 2;
+  ctx.drawImage(base, x, y, w, h);
+  if (state.selectedLogoStyle) {
+    const logo = await loadCanvasImage(media(state.selectedLogoStyle));
+    const logoW = Math.min(w * .38, 380), logoH = logo.height / logo.width * logoW;
+    ctx.drawImage(logo, x + (w - logoW) / 2, y + h * .2, logoW, logoH);
+  }
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#17202a";
+  ctx.font = "900 78px Microsoft YaHei";
+  ctx.fillText($("#product-name").value.trim(), canvas.width / 2, y + h * .56);
+  ctx.font = "700 42px Microsoft YaHei";
+  ctx.fillText(`净含量：${$("#product-net").value.trim()}`, canvas.width / 2, y + h * .66);
+  return canvas.toDataURL("image/png");
+}
+
 $("#nav").onclick = (event) => {
   const button = event.target.closest("[data-view]");
   if (button) switchView(button.dataset.view);
@@ -658,15 +766,31 @@ $("#new-category-btn").onclick = async () => {
   if (!name) return;
   try { await api("/api/categories", { method: "POST", body: JSON.stringify({ name }) }); await reload(); toast("分类已创建"); } catch (error) { toast(error.message, true); }
 };
-$("#new-product-btn").onclick = () => $("#product-dialog").showModal();
+$("#new-product-btn").onclick = () => {
+  $("#product-create-mode").value = "upload";
+  $("#product-style-builder").classList.remove("active");
+  $("#product-file-field").classList.remove("hidden");
+  renderProductStyleBuilder();
+  $("#product-dialog").showModal();
+};
+$("#product-create-mode").onchange = () => {
+  const styled = $("#product-create-mode").value === "style";
+  $("#product-style-builder").classList.toggle("active", styled);
+  $("#product-file-field").classList.toggle("hidden", styled);
+  if (styled) renderProductStyleBuilder();
+};
+$("#product-name").oninput = () => { if ($("#product-create-mode").value === "style") renderProductStyleBuilder(); };
+$("#product-net").oninput = () => { if ($("#product-create-mode").value === "style") renderProductStyleBuilder(); };
 $("#save-product-btn").onclick = async () => {
   try {
     const file = $("#product-file").files[0];
-    if (!file) throw new Error("请选择产品图片");
+    const styled = $("#product-create-mode").value === "style";
+    if (!styled && !file) throw new Error("请选择产品图片");
+    const dataUrl = styled ? await styledProductDataUrl() : await fileToDataUrl(file);
     await api("/api/products/add", { method: "POST", body: JSON.stringify({
       name: $("#product-name").value, category: $("#product-category").value, net: $("#product-net").value,
       form: $("#product-form-type").value, tags: $("#product-tags").value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
-      fileName: file.name, dataUrl: await fileToDataUrl(file),
+      fileName: styled ? `${$("#product-name").value.trim()}.png` : file.name, dataUrl,
     }) });
     $("#product-dialog").close(); await reload(); toast("产品已添加");
   } catch (error) { toast(error.message, true); }
@@ -696,25 +820,20 @@ $("#reset-layout").onclick = () => {
 };
 $("#preview-category").onchange = (event) => {
   state.previewCategory = event.target.value;
-  state.previewProduct = null;
+  state.previewProducts = [];
   fillPreviewProducts();
   renderVisualEditor();
 };
-$("#preview-product").onchange = (event) => {
-  state.previewProduct = event.target.value;
-  renderVisualEditor();
-};
-$("#edit-marketing-btn").onclick = openMarketingEditor;
-$("#close-marketing").onclick = () => $("#marketing-dialog").close();
-$("#cancel-marketing").onclick = () => $("#marketing-dialog").close();
 $("#marketing-category").onchange = loadMarketingForm;
 $("#marketing-template").onchange = loadMarketingForm;
 $("#add-marketing-point").onclick = () => {
   commitMarketingFormToDraft();
   state.marketingDraft.points.push("");
+  state.marketingDraft.pointTargets ||= [];
+  state.marketingDraft.pointTargets.push(["all"]);
   renderMarketingPoints();
 };
-$("#save-marketing").onclick = async () => {
+$("#save-marketing-page").onclick = async () => {
   try {
     commitMarketingFormToDraft();
     if (!state.marketingDraft.subtitle || !state.marketingDraft.footer) throw new Error("副标题和底栏文案不能为空");
@@ -725,7 +844,6 @@ $("#save-marketing").onclick = async () => {
     await api("/api/marketing/save", { method: "POST", body: JSON.stringify({ rows }) });
     state.previewCategory = state.marketingDraft.category;
     await reload();
-    $("#marketing-dialog").close();
     renderVisualEditor();
     toast("营销文案已保存，模板预览已更新");
   } catch (error) { toast(error.message, true); }
@@ -737,7 +855,7 @@ $("#layout-canvas").onpointerdown = (event) => {
   const key = draft.key;
   const start = canvasPoint(event);
   const box = normalizeVisualLayout({ elements: {
-    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: "custom", text: "", shape: draft.type === "product" ? "none" : "rounded", fontRatio: draft.type === "product" ? null : 0.8 },
+    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: draft.type === "product" ? `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}` : "custom", text: "", shape: draft.type === "product" ? "none" : "rounded", fontRatio: draft.type === "product" ? null : 0.8 },
   } }).elements[key];
   state.editingVisualLayout.elements[key] = box;
   const move = (moveEvent) => {
