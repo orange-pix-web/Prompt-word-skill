@@ -159,6 +159,19 @@
             <button class="btn primary" id="import-json-template">校验并带入模板编辑器</button>
           </div>
           <div class="json-import-status" id="json-import-status">坐标必须使用0–100百分比；导入只创建草稿，不会直接覆盖或保存模板。</div>
+          <details class="json-guide" open>
+            <summary>给豆包或ChatGPT的分析提示词与标准JSON示例</summary>
+            <div class="json-guide-grid">
+              <section>
+                <div class="json-guide-head"><strong>直接复制给AI的提示词</strong><button class="text-btn" id="copy-json-prompt">复制提示词</button></div>
+                <textarea id="json-analysis-prompt" rows="14" readonly></textarea>
+              </section>
+              <section>
+                <div class="json-guide-head"><strong>标准JSON示例</strong><button class="text-btn" id="copy-json-example">复制示例</button></div>
+                <pre id="json-example-preview"></pre>
+              </section>
+            </div>
+          </details>
         </div>
       </section>
 

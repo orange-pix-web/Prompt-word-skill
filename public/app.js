@@ -23,6 +23,34 @@ const state = {
   originalVisualLayout: null,
 };
 
+const JSON_TEMPLATE_EXAMPLE = {
+  name: "蓝色信息板布局",
+  canvas: { width: 1024, height: 1024 },
+  elements: [
+    { type: "product", binding: "product1", x: 52, y: 18, w: 40, h: 62, z: 4 },
+    { type: "title", binding: "productName", x: 6, y: 15, w: 40, h: 12, z: 5, shape: "none" },
+    { type: "sellingPoint", binding: "point1", copyRegion: "侧栏卖点", x: 8, y: 38, w: 30, h: 8, z: 5, shape: "rounded" },
+    { type: "footer", binding: "footer", x: 3, y: 88, w: 94, h: 9, z: 5, shape: "rectangle" },
+  ],
+};
+
+const JSON_ANALYSIS_PROMPT = `请分析我上传的中文电商主图参考图，并转换成可以导入“生图工作台”的模板JSON。
+
+要求：
+1. 只输出一个完整JSON对象，不要添加Markdown代码块、解释或其它文字。
+2. 不要复制参考图中的具体营销文案，只分析构图和图层。
+3. 画布固定为1024×1024。
+4. 所有x、y、w、h都使用0到100的百分比，左上角为原点，并保证x+w≤100、y+h≤100。
+5. 必须识别主要产品和主标题；参考图中存在的副标题、卖点、净含量、底栏、动物区域和背景区域也分别建立图层。
+6. 产品type使用product，binding依次使用product1、product2。
+7. 主标题type使用title、binding使用productName；副标题type使用title、binding使用subtitle。
+8. 卖点type使用sellingPoint，binding依次使用point1、point2；copyRegion只能写顶部卖点、侧栏卖点或底部卖点。
+9. 净含量type使用net、binding使用net；底栏type使用footer、binding使用footer。
+10. shape只能使用none、rectangle、rounded、circle、ellipse、pill、parallelogram。
+11. z表示图层顺序，背景通常为1，动物为2，产品为4，文字和卖点通常为5以上。
+
+请严格按照页面下方的标准JSON示例格式输出。`;
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -53,6 +81,23 @@ function toast(message, error = false, action = null) {
   element.className = `toast show${error ? " error" : ""}`;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => element.className = "toast", action ? 6000 : 3000);
+}
+
+async function copyText(text, successMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const helper = document.createElement("textarea");
+    helper.value = text;
+    helper.style.position = "fixed";
+    helper.style.opacity = "0";
+    document.body.append(helper);
+    helper.select();
+    const copied = document.execCommand("copy");
+    helper.remove();
+    if (!copied) throw new Error("浏览器未允许复制，请手动选择文字复制");
+  }
+  toast(successMessage);
 }
 
 function media(path) {
@@ -1030,22 +1075,12 @@ $("#json-template-file").onchange = async (event) => {
   }
 };
 $("#fill-json-example").onclick = () => {
-  $("#json-template-text").value = JSON.stringify({
-    name: "左右分栏示例",
-    description: "左侧标题与三条卖点，右侧产品，底部通栏。",
-    elements: [
-      { type: "title", label: "主标题", binding: "productName", x: 6, y: 10, w: 40, h: 12, z: 5, shape: "none" },
-      { type: "sellingPoint", label: "卖点1", binding: "point1", copyRegion: "侧栏卖点", x: 8, y: 35, w: 32, h: 8, z: 5, shape: "rounded" },
-      { type: "sellingPoint", label: "卖点2", binding: "point2", copyRegion: "侧栏卖点", x: 8, y: 46, w: 32, h: 8, z: 5, shape: "rounded" },
-      { type: "sellingPoint", label: "卖点3", binding: "point3", copyRegion: "侧栏卖点", x: 8, y: 57, w: 32, h: 8, z: 5, shape: "rounded" },
-      { type: "product", label: "产品", binding: "product1", x: 52, y: 17, w: 42, h: 63, z: 4, shape: "none" },
-      { type: "net", label: "净含量", binding: "net", x: 68, y: 80, w: 24, h: 6, z: 6, shape: "pill" },
-      { type: "footer", label: "底栏", binding: "footer", x: 3, y: 88, w: 94, h: 9, z: 7, shape: "rectangle" },
-    ],
-  }, null, 2);
+  $("#json-template-text").value = JSON.stringify(JSON_TEMPLATE_EXAMPLE, null, 2);
   $("#json-import-status").className = "json-import-status";
   $("#json-import-status").textContent = "示例已填入，可直接校验并带入编辑器。";
 };
+$("#copy-json-prompt").onclick = () => copyText(JSON_ANALYSIS_PROMPT, "分析提示词已复制");
+$("#copy-json-example").onclick = () => copyText(JSON.stringify(JSON_TEMPLATE_EXAMPLE, null, 2), "JSON示例已复制");
 $("#import-json-template").onclick = async () => {
   const status = $("#json-import-status");
   try {
@@ -1087,6 +1122,9 @@ $("#analyze-reference-btn").onclick = async () => {
     toast("参考图已导入");
   } catch (error) { $("#analysis-output").textContent = error.message; toast(error.message, true); }
 };
+
+$("#json-analysis-prompt").value = JSON_ANALYSIS_PROMPT;
+$("#json-example-preview").textContent = JSON.stringify(JSON_TEMPLATE_EXAMPLE, null, 2);
 
 load().catch((error) => {
   document.body.innerHTML = `<main style="padding:40px"><h1>无法启动工作台</h1><p>${error.message}</p></main>`;
