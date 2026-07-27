@@ -18,6 +18,9 @@ const state = {
   referenceFile: null,
   referenceDimensions: null,
   detailProduct: null,
+  pendingDeletedMarketing: [],
+  pendingDeletedElements: [],
+  originalVisualLayout: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -33,12 +36,23 @@ async function api(url, options = {}) {
   return payload;
 }
 
-function toast(message, error = false) {
+function toast(message, error = false, action = null) {
   const element = $("#toast");
-  element.textContent = message;
+  element.innerHTML = "";
+  element.append(document.createTextNode(message));
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    button.onclick = () => {
+      action.run();
+      element.className = "toast";
+    };
+    element.append(button);
+  }
   element.className = `toast show${error ? " error" : ""}`;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.className = "toast", 3000);
+  toast.timer = setTimeout(() => element.className = "toast", action ? 6000 : 3000);
 }
 
 function media(path) {
@@ -64,6 +78,7 @@ function renderAll() {
   renderGenerator();
   fillCategorySelects();
   renderMarketingNavigation();
+  renderRecycleBin();
   $("#ai-state").textContent = state.data.aiAnalysisAvailable ? "AI视觉分析已启用" : "本地草稿模式";
 }
 
@@ -421,10 +436,30 @@ function renderLayoutProperties() {
     renderVisualEditor();
   };
   $("#remove-layout-element").onclick = () => {
+    if (!window.confirm(`确定删除模板元素“${box.label || key}”吗？保存模板后会进入回收站并保留30天。`)) return;
+    const original = state.originalVisualLayout?.elements?.[key];
+    if (original && !state.pendingDeletedElements.some((item) => item.key === key)) {
+      state.pendingDeletedElements.push({
+        templateNumber: $("#tpl-number").value.trim().padStart(2, "0"),
+        key,
+        box: structuredClone(original),
+      });
+    }
     box.visible = false;
     box.manualHidden = true;
     state.selectedLayoutElement = null;
     renderVisualEditor();
+    toast("模板元素已删除，保存模板后进入回收站", false, {
+      label: "撤销",
+      run: () => {
+        state.pendingDeletedElements = state.pendingDeletedElements.filter((item) => item.key !== key);
+        state.editingVisualLayout.elements[key] = structuredClone(original || box);
+        state.editingVisualLayout.elements[key].visible = true;
+        state.editingVisualLayout.elements[key].manualHidden = false;
+        state.selectedLayoutElement = key;
+        renderVisualEditor();
+      },
+    });
   };
 }
 
@@ -521,7 +556,7 @@ function fillCategorySelects() {
 
 function switchView(view) {
   state.view = view;
-  const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", references: "参考图分析" };
+  const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", references: "参考图分析", recycle: "回收站" };
   $("#page-title").textContent = labels[view];
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `view-${view}`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -546,6 +581,8 @@ function openTemplate(number = null, draft = null) {
   $("#tpl-net").value = template.netPosition;
   $("#tpl-enabled").checked = template.enabled;
   state.editingVisualLayout = normalizeVisualLayout(template.visualLayout || defaultVisualLayout(template.number, template.points));
+  state.originalVisualLayout = structuredClone(state.editingVisualLayout);
+  state.pendingDeletedElements = [];
   state.previewCategory ||= state.data.categories[0] || null;
   const categoryOptions = state.data.categories.map((category) => `<option value="${category}">${category}</option>`).join("");
   $("#preview-category").innerHTML = categoryOptions;
@@ -622,8 +659,53 @@ function renderProductCopies() {
       : input.dataset.copyField === "enabled" ? input.checked : input.value;
   });
   $$("[data-remove-copy]").forEach((button) => button.onclick = () => {
-    state.data.productMarketingEntries.splice(Number(button.dataset.removeCopy), 1);
+    const index = Number(button.dataset.removeCopy);
+    const entry = state.data.productMarketingEntries[index];
+    if (!window.confirm(`确定删除营销词“${entry.text || "空白营销词"}”吗？保存后会进入回收站并保留30天。`)) return;
+    state.data.productMarketingEntries.splice(index, 1);
+    state.pendingDeletedMarketing.push({ entry: structuredClone(entry), index });
     renderProductCopies();
+    toast("营销词已删除，保存后进入回收站", false, {
+      label: "撤销",
+      run: () => {
+        const pendingIndex = state.pendingDeletedMarketing.findIndex((item) =>
+          item.index === index && item.entry.text === entry.text);
+        if (pendingIndex >= 0) state.pendingDeletedMarketing.splice(pendingIndex, 1);
+        state.data.productMarketingEntries.splice(Math.min(index, state.data.productMarketingEntries.length), 0, entry);
+        renderProductCopies();
+      },
+    });
+  });
+}
+
+function renderRecycleBin() {
+  const list = $("#recycle-list");
+  if (!list || !state.data) return;
+  const items = state.data.recycleBin || [];
+  $("#purge-recycle-all").disabled = !items.length;
+  list.innerHTML = items.map((item) => {
+    const deleted = new Date(item.deletedAt).toLocaleString("zh-CN");
+    const expires = new Date(item.expiresAt).toLocaleDateString("zh-CN");
+    const type = item.type === "marketing-copy" ? "营销词" : "模板元素";
+    return `<article class="recycle-card">
+      <div><span class="recycle-type">${type}</span><h3>${item.label}</h3><p>删除时间：${deleted}　自动清理：${expires}</p></div>
+      <div class="recycle-actions"><button class="btn ghost" data-restore-trash="${item.id}">恢复</button><button class="btn danger" data-purge-trash="${item.id}">彻底删除</button></div>
+    </article>`;
+  }).join("") || `<div class="empty-recycle"><strong>回收站为空</strong><span>删除并保存的营销词或模板元素会在这里保留30天。</span></div>`;
+  $$("[data-restore-trash]").forEach((button) => button.onclick = async () => {
+    try {
+      await api("/api/recycle/restore", { method: "POST", body: JSON.stringify({ id: button.dataset.restoreTrash }) });
+      await reload();
+      toast("已从回收站恢复");
+    } catch (error) { toast(error.message, true); }
+  });
+  $$("[data-purge-trash]").forEach((button) => button.onclick = async () => {
+    if (!window.confirm("彻底删除后无法从工作台恢复，确定继续吗？")) return;
+    try {
+      await api("/api/recycle/purge", { method: "POST", body: JSON.stringify({ id: button.dataset.purgeTrash }) });
+      await reload();
+      toast("已彻底删除");
+    } catch (error) { toast(error.message, true); }
   });
 }
 
@@ -761,6 +843,15 @@ $("#nav").onclick = (event) => {
   const button = event.target.closest("[data-view]");
   if (button) switchView(button.dataset.view);
 };
+$("#purge-recycle-all").onclick = async () => {
+  if (!window.confirm("确定清空回收站吗？所有项目都会被彻底删除，且无法从工作台恢复。")) return;
+  if (!window.confirm("请再次确认：真的要永久删除回收站中的全部内容吗？")) return;
+  try {
+    await api("/api/recycle/purge", { method: "POST", body: JSON.stringify({ all: true }) });
+    await reload();
+    toast("回收站已清空");
+  } catch (error) { toast(error.message, true); }
+};
 $("#refresh-btn").onclick = async () => { await reload(); toast("数据已刷新"); };
 $("#product-search").oninput = (event) => { state.search = event.target.value; renderProducts(); };
 $("#select-all-products").onchange = (event) => {
@@ -814,7 +905,11 @@ $("#save-template-btn").onclick = async () => {
       if (state.data.templates.some((item) => item.number === template.number)) throw new Error("模板编号已存在");
       state.data.templates.push(template);
     }
-    await api("/api/templates/save", { method: "POST", body: JSON.stringify({ templates: state.data.templates }) });
+    await api("/api/templates/save", { method: "POST", body: JSON.stringify({
+      templates: state.data.templates,
+      deletedElements: state.pendingDeletedElements,
+    }) });
+    state.pendingDeletedElements = [];
     $("#template-dialog").close(); await reload(); toast("模板已保存");
   } catch (error) { toast(error.message, true); }
 };
@@ -838,7 +933,11 @@ $("#add-product-copy").onclick = addProductCopy;
 $("#save-marketing-page").onclick = async () => {
   try {
     if (state.data.productMarketingEntries.some((entry) => !entry.text.trim())) throw new Error("请填写或删除空白营销词");
-    await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({ entries: state.data.productMarketingEntries }) });
+    await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({
+      entries: state.data.productMarketingEntries,
+      deletedEntries: state.pendingDeletedMarketing.map((item) => item.entry),
+    }) });
+    state.pendingDeletedMarketing = [];
     await reload();
     renderVisualEditor();
     toast("营销文案已保存，模板预览已更新");

@@ -23,6 +23,7 @@
         <button class="nav-item" data-view="templates"><span>◇</span>模板中心</button>
         <button class="nav-item" data-view="generate"><span>✦</span>提示词生成</button>
         <button class="nav-item" data-view="references"><span>◎</span>参考图分析</button>
+        <button class="nav-item" data-view="recycle"><span>♲</span>回收站</button>
       </nav>
       <div class="sidebar-foot">
         <span class="status-dot"></span>
@@ -144,6 +145,14 @@
             <div class="analysis-output" id="analysis-output">分析结果会显示在这里，并可一键带入模板编辑器。</div>
           </div>
         </div>
+      </section>
+
+      <section class="view" id="view-recycle">
+        <div class="section-head">
+          <div><h2>回收站</h2><p>已保存的删除内容保留30天；恢复后会回到原来的营销文案或模板中。</p></div>
+          <button class="btn danger" id="purge-recycle-all">清空回收站</button>
+        </div>
+        <div class="recycle-list" id="recycle-list"></div>
       </section>
     </main>
   </div>

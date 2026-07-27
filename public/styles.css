@@ -41,6 +41,8 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(40,30,25,.08); }
 .btn.primary { color: white; border-color: var(--orange); background: linear-gradient(135deg, #ff7b2f, #e95310); }
 .btn.ghost { background: rgba(255,255,255,.55); }
+.btn.danger { color: #a8392e; border-color: #e8c5bf; background: #fff2ef; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn.small { padding: 7px 12px; font-size: 12px; }
 .btn.large { width: 100%; padding: 14px; font-size: 15px; }
 .view { display: none; animation: fade .22s ease; }
@@ -281,6 +283,15 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .product-copy-row .copy-enabled { display: flex; gap: 5px; align-items: center; padding-bottom: 8px; }
 .product-copy-row .copy-enabled input { width: auto; margin: 0; }
 .product-copy-row > button { height: 36px; border: 0; border-radius: 8px; color: #a8392e; background: #f9e7e4; }
+.recycle-list { display: grid; gap: 10px; }
+.recycle-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.recycle-card h3 { margin: 6px 0 4px; font-size: 15px; }
+.recycle-card p { margin: 0; color: var(--muted); font-size: 10px; }
+.recycle-type { display: inline-block; padding: 4px 8px; border-radius: 99px; color: #9b4d20; background: #fff0e4; font-size: 9px; font-weight: 800; }
+.recycle-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.empty-recycle { min-height: 260px; display: grid; place-items: center; align-content: center; gap: 8px; border: 1px dashed var(--line); border-radius: 18px; color: var(--muted); background: rgba(255,255,255,.45); }
+.empty-recycle strong { color: var(--ink); font-size: 18px; }
+.empty-recycle span { font-size: 11px; }
 .marketing-toolbar { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px; align-items: end; padding: 13px; background: #f7f1ea; border-radius: 12px; }
 .marketing-status { min-height: 38px; display: flex; align-items: center; color: var(--muted); font-size: 10px; }
 .marketing-form { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 16px; }
@@ -325,8 +336,9 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .detail-layout > img { width: 100%; height: 350px; object-fit: contain; background: #f5efe8; border-radius: 14px; }
 .detail-fields { display: grid; gap: 12px; align-content: start; }
 .prompt-status { border-radius: 10px; padding: 11px; background: #eaf6ef; color: #2f7550; font-size: 11px; }
-.toast { position: fixed; right: 24px; bottom: 24px; z-index: 20; max-width: 360px; transform: translateY(20px); opacity: 0; pointer-events: none; background: #25211f; color: white; padding: 13px 16px; border-radius: 12px; box-shadow: 0 15px 40px rgba(0,0,0,.2); transition: .25s; font-size: 12px; }
-.toast.show { opacity: 1; transform: translateY(0); }
+.toast { position: fixed; right: 24px; bottom: 24px; z-index: 20; max-width: 420px; transform: translateY(20px); opacity: 0; pointer-events: none; background: #25211f; color: white; padding: 13px 16px; border-radius: 12px; box-shadow: 0 15px 40px rgba(0,0,0,.2); transition: .25s; font-size: 12px; }
+.toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.toast button { margin-left: 14px; border: 0; border-radius: 7px; padding: 6px 10px; color: #ffb47f; background: rgba(255,255,255,.12); font-weight: 800; }
 .toast.error { background: #a63026; }
 @media (max-width: 1050px) {
   .generator-layout { grid-template-columns: 1fr 1fr; }
@@ -337,7 +349,7 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; padding: 14px; }
   .brand { padding-bottom: 12px; }
-  nav { grid-template-columns: repeat(5,1fr); }
+  nav { grid-template-columns: repeat(6,1fr); }
   .nav-item { justify-content: center; font-size: 0; }
   .nav-item span { font-size: 18px; }
   .sidebar-foot { display: none; }
@@ -350,4 +362,5 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
   .preview-context, .marketing-toolbar, .marketing-form { grid-template-columns: 1fr; }
   .marketing-form .wide { grid-column: auto; }
   .product-copy-row { grid-template-columns: 1fr 1fr; }
+  .recycle-card { align-items: flex-start; flex-direction: column; }
 }

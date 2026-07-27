@@ -4,6 +4,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   IMAGE_EXTENSIONS,
   generateCombinedPromptMarkdown,
@@ -37,6 +38,8 @@ const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
 const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
+const RECYCLE_FILE = path.join(META_ROOT, "recycle-bin.json");
+const BACKUP_ROOT = path.join(META_ROOT, "backups");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const PORT = Number(process.env.PORT || 4178);
@@ -66,8 +69,41 @@ async function saveMeta(meta) {
   await fs.writeFile(META_FILE, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
 
+async function backupFile(file, label) {
+  if (!fsSync.existsSync(file)) return;
+  await fs.mkdir(BACKUP_ROOT, { recursive: true });
+  const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  await fs.copyFile(file, path.join(BACKUP_ROOT, `${stamp}-${label}.bak`));
+}
+
+async function readRecycleBin() {
+  const entries = await readJson(RECYCLE_FILE, []);
+  const now = Date.now();
+  const active = Array.isArray(entries) ? entries.filter((item) => Date.parse(item.expiresAt) > now) : [];
+  if (active.length !== entries.length) {
+    await fs.mkdir(META_ROOT, { recursive: true });
+    await fs.writeFile(RECYCLE_FILE, `${JSON.stringify(active, null, 2)}\n`, "utf8");
+  }
+  return active;
+}
+
+async function addRecycleItems(items) {
+  if (!items.length) return;
+  const entries = await readRecycleBin();
+  const deletedAt = new Date();
+  const expiresAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+  entries.unshift(...items.map((item) => ({
+    id: randomUUID(),
+    deletedAt: deletedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    ...item,
+  })));
+  await fs.mkdir(META_ROOT, { recursive: true });
+  await fs.writeFile(RECYCLE_FILE, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+}
+
 async function loadState() {
-  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts, recycleBin] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
@@ -75,6 +111,7 @@ async function loadState() {
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
+    readRecycleBin(),
   ]);
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
@@ -129,6 +166,7 @@ async function loadState() {
     templates,
     productStyles,
     productMarketingEntries,
+    recycleBin,
     marketingCoverage: Object.fromEntries([...marketing].map(([group, rows]) => [group, rows.size])),
     marketingRows: [...marketing].flatMap(([category, rows]) => [...rows].map(([number, copy]) => ({
       category, number, subtitle: copy.subtitle, support: copy.support, points: copy.points, footer: copy.footer,
@@ -230,12 +268,20 @@ async function apiSaveTemplates(body) {
     numbers.add(template.number);
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
   }
+  await backupFile(TEMPLATE_FILE, "主图模板配置.md");
+  await backupFile(LAYOUT_FILE, "template-layouts.json");
   await fs.writeFile(TEMPLATE_FILE, serializeTemplates(body.templates), "utf8");
   await fs.mkdir(META_ROOT, { recursive: true });
   const layouts = Object.fromEntries(body.templates
     .filter((template) => template.visualLayout)
     .map((template) => [template.number, template.visualLayout]));
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
+  const deletedElements = Array.isArray(body.deletedElements) ? body.deletedElements : [];
+  await addRecycleItems(deletedElements.map((item) => ({
+    type: "template-element",
+    label: `模板${item.templateNumber}｜${item.box?.label || item.key}`,
+    data: item,
+  })));
   return { ok: true };
 }
 
@@ -276,7 +322,54 @@ async function apiSaveProductMarketing(body) {
     if (entry.scope === "category" && !categories.has(entry.category)) throw new Error(`未知分类：${entry.category}`);
     if (entry.scope === "product" && !productNames.has(entry.product)) throw new Error(`未知产品：${entry.product}`);
   }
+  await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
   await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(body.entries), "utf8");
+  const deletedEntries = Array.isArray(body.deletedEntries) ? body.deletedEntries : [];
+  await addRecycleItems(deletedEntries.map((entry) => ({
+    type: "marketing-copy",
+    label: `营销词｜${entry.text}`,
+    data: { entry },
+  })));
+  return { ok: true };
+}
+
+async function apiRestoreRecycle(body) {
+  const entries = await readRecycleBin();
+  const item = entries.find((entry) => entry.id === body.id);
+  if (!item) throw new Error("回收站项目不存在或已过期");
+  if (item.type === "marketing-copy") {
+    const current = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8").catch(() => ""));
+    const restored = item.data?.entry;
+    if (!restored) throw new Error("回收站营销词数据损坏");
+    const duplicate = current.some((entry) =>
+      entry.scope === restored.scope && entry.category === restored.category && entry.product === restored.product
+      && entry.region === restored.region && entry.text === restored.text);
+    if (!duplicate) {
+      await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
+      current.push(restored);
+      await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(current), "utf8");
+    }
+  } else if (item.type === "template-element") {
+    const { templateNumber, key, box } = item.data || {};
+    if (!templateNumber || !key || !box) throw new Error("回收站模板元素数据损坏");
+    const layouts = await readJson(LAYOUT_FILE, {});
+    if (!layouts[templateNumber]) throw new Error(`模板【${templateNumber}】不存在`);
+    await backupFile(LAYOUT_FILE, "template-layouts.json");
+    layouts[templateNumber].elements ||= {};
+    layouts[templateNumber].elements[key] = { ...box, visible: true, manualHidden: false };
+    await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
+  } else {
+    throw new Error("不支持恢复此类型项目");
+  }
+  await fs.writeFile(RECYCLE_FILE, `${JSON.stringify(entries.filter((entry) => entry.id !== item.id), null, 2)}\n`, "utf8");
+  return { ok: true };
+}
+
+async function apiPurgeRecycle(body) {
+  const entries = await readRecycleBin();
+  const remaining = body.all ? [] : entries.filter((entry) => entry.id !== body.id);
+  if (!body.all && remaining.length === entries.length) throw new Error("回收站项目不存在");
+  await fs.writeFile(RECYCLE_FILE, `${JSON.stringify(remaining, null, 2)}\n`, "utf8");
   return { ok: true };
 }
 
@@ -412,6 +505,8 @@ const server = http.createServer(async (request, response) => {
         "/api/templates/save": apiSaveTemplates,
         "/api/marketing/save": apiSaveMarketing,
         "/api/product-marketing/save": apiSaveProductMarketing,
+        "/api/recycle/restore": apiRestoreRecycle,
+        "/api/recycle/purge": apiPurgeRecycle,
         "/api/prompts/generate": apiGeneratePrompts,
         "/api/references/import": apiImportReference,
       };
