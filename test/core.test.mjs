@@ -12,6 +12,9 @@ import {
   serializeMarketingExtras,
   parseProductFacts,
   parseTemplates,
+  parseProductMarketing,
+  resolveProductMarketing,
+  serializeProductMarketing,
   safeChildPath,
 } from "../lib/core.mjs";
 
@@ -24,6 +27,24 @@ test("营销文案支持扩展卖点并可序列化", () => {
   const extras = serializeMarketingExtras(rows);
   const merged = mergeMarketingExtras(parseMarketing(primary), parseMarketingExtras(extras));
   assert.deepEqual(merged.get("鸽子鸟类").get("01").points, rows[0].points);
+});
+
+test("产品营销词按产品专属、分类通用、全局通用依次选择", () => {
+  const entries = [
+    { scope: "global", category: "*", product: "*", region: "侧栏卖点", text: "品质保障", priority: 10, enabled: true },
+    { scope: "category", category: "鸡鸭鹅禽类", product: "*", region: "侧栏卖点", text: "蛋禽肉禽", priority: 50, enabled: true },
+    { scope: "product", category: "鸡鸭鹅禽类", product: "腺肌胃康宁", region: "侧栏卖点", text: "腺肌胃炎", priority: 100, enabled: true },
+  ];
+  const restored = parseProductMarketing(serializeProductMarketing(entries));
+  const copy = resolveProductMarketing(restored, { name: "腺肌胃康宁", category: "鸡鸭鹅禽类" }, {
+    points: 3,
+    visualLayout: { elements: {
+      point1: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 20 },
+      point2: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 30 },
+      point3: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 40 },
+    } },
+  });
+  assert.deepEqual(copy.points, ["腺肌胃炎", "蛋禽肉禽", "品质保障"]);
 });
 
 test("解析模板和营销词表格", () => {
@@ -119,14 +140,13 @@ test("支持多产品组合主图", () => {
     ],
     templates: [template],
     marketingByCategory: new Map([["鸡鸭鹅禽类", new Map([["10", {
-      points: ["共同卖点", "瓶装专属"], pointTargets: [["all"], ["product2"]], footer: "组合常备",
+      points: ["共同卖点", "瓶装专属"], footer: "组合常备",
     }]])]]),
   });
   assert.match(markdown, /【袋装产品】、【瓶装产品】/);
   assert.match(markdown, /产品1位于画面左侧8%/);
   assert.match(markdown, /鸡鸭鹅背景/);
-  assert.match(markdown, /【共同卖点】用于全部产品/);
-  assert.match(markdown, /【瓶装专属】绑定产品2【瓶装产品】/);
+  assert.match(markdown, /默认营销卖点依次写【共同卖点】【瓶装专属】/);
 });
 
 test("拒绝越界路径", () => {

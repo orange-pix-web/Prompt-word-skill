@@ -69,23 +69,20 @@
 
       <section class="view" id="view-marketing">
         <div class="section-head">
-          <div><h2>营销文案</h2><p>独立管理分类、模板及多产品卖点绑定，布局编辑不会改动这里的文字。</p></div>
+          <div><h2>营销文案</h2><p>按具体产品、产品分类或全局范围管理营销词；模板只决定使用数量和显示位置。</p></div>
           <button class="btn primary" id="save-marketing-page">保存营销文案</button>
         </div>
         <div class="marketing-page">
           <aside class="marketing-page-nav">
-            <label>产品分类<select id="marketing-category"></select></label>
-            <label>主图模板<select id="marketing-template"></select></label>
+            <label>文案范围<select id="marketing-scope"><option value="product">产品专属</option><option value="category">分类通用</option><option value="global">全局通用</option></select></label>
+            <label id="marketing-category-field">产品分类<select id="marketing-category"></select></label>
+            <label id="marketing-product-field">具体产品<select id="marketing-product"></select></label>
             <div class="marketing-status" id="marketing-status"></div>
           </aside>
-          <div class="marketing-form panel">
-            <label>副标题<input id="marketing-subtitle"></label>
-            <label>辅助文案<input id="marketing-support"></label>
-            <div class="wide marketing-binding-help">每条卖点可勾选“全部产品”或产品1～产品6；生成多产品主图时会写入对应关系。</div>
-            <label class="wide">营销卖点</label>
-            <div class="marketing-points wide" id="marketing-points"></div>
-            <button type="button" class="btn ghost wide" id="add-marketing-point">＋ 添加一条卖点</button>
-            <label class="wide">底栏文案<input id="marketing-footer"></label>
+          <div class="panel">
+            <div class="marketing-binding-help">模板只决定文案数量和位置。生成时优先使用产品专属词，不足时自动补充分类通用词和全局通用词。</div>
+            <div class="product-copy-list" id="product-copy-list"></div>
+            <button type="button" class="btn ghost wide" id="add-product-copy">＋ 添加营销词</button>
           </div>
         </div>
       </section>
@@ -196,7 +193,7 @@
           <div class="preview-context">
             <label>预览分类<select id="preview-category"></select></label>
             <div><span class="preview-label">示例产品（可多选）</span><div class="preview-product-list" id="preview-products"></div></div>
-            <small>产品框可绑定产品1～产品6；卖点对应关系在左侧“营销文案”中设置。</small>
+            <small>产品框可分别绑定多个示例产品；营销词按产品、分类和全局范围管理，模板只设置卖点框数量与位置。</small>
           </div>
           <div class="element-palette" id="element-palette"></div>
           <div class="layout-canvas" id="layout-canvas"></div>

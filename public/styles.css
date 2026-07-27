@@ -273,6 +273,14 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .marketing-page { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
 .marketing-page-nav { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); background: var(--card); border-radius: 16px; position: sticky; top: 20px; }
 .marketing-binding-help { padding: 10px 12px; border-radius: 10px; background: #fff5ec; color: #8a542f; font-size: 10px; }
+.product-copy-list { display: grid; gap: 9px; margin: 14px 0; }
+.product-copy-row { display: grid; grid-template-columns: minmax(180px,1fr) 130px 92px 62px 36px; gap: 8px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.product-copy-row > input, .product-copy-row > select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px; }
+.product-copy-row label { margin: 0; }
+.product-copy-row label input { padding: 8px; }
+.product-copy-row .copy-enabled { display: flex; gap: 5px; align-items: center; padding-bottom: 8px; }
+.product-copy-row .copy-enabled input { width: auto; margin: 0; }
+.product-copy-row > button { height: 36px; border: 0; border-radius: 8px; color: #a8392e; background: #f9e7e4; }
 .marketing-toolbar { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px; align-items: end; padding: 13px; background: #f7f1ea; border-radius: 12px; }
 .marketing-status { min-height: 38px; display: flex; align-items: center; color: var(--muted); font-size: 10px; }
 .marketing-form { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 16px; }
@@ -341,4 +349,5 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
   .form-grid .wide { grid-column: auto; }
   .preview-context, .marketing-toolbar, .marketing-form { grid-template-columns: 1fr; }
   .marketing-form .wide { grid-column: auto; }
+  .product-copy-row { grid-template-columns: 1fr 1fr; }
 }

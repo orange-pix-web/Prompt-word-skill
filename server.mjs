@@ -16,10 +16,13 @@ import {
   mergeMarketingExtras,
   parseProductFacts,
   parseTemplates,
+  parseProductMarketing,
+  resolveProductMarketing,
   safeChildPath,
   serializeTemplates,
   serializeMarketing,
   serializeMarketingExtras,
+  serializeProductMarketing,
 } from "./lib/core.mjs";
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -29,11 +32,11 @@ const PRODUCT_STYLE_ROOT = path.join(PRODUCT_ROOT, "产品模板");
 const TEMPLATE_FILE = path.join(DATA_ROOT, "主图模板配置", "主图模板配置.md");
 const MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "主图模板营销词配置.md");
 const MARKETING_EXTRAS_FILE = path.join(DATA_ROOT, "营销文案", "扩展营销卖点配置.md");
+const PRODUCT_MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "产品营销词配置.md");
 const SCRIPT_FILE = path.join(DATA_ROOT, "生成全部产品提示词.ps1");
 const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
 const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
-const MARKETING_BINDINGS_FILE = path.join(META_ROOT, "marketing-bindings.json");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const PORT = Number(process.env.PORT || 4178);
@@ -64,20 +67,21 @@ async function saveMeta(meta) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, marketingExtrasText, scriptText, meta, layouts, marketingBindings] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
+    fs.readFile(PRODUCT_MARKETING_FILE, "utf8").catch(() => ""),
     fs.readFile(SCRIPT_FILE, "utf8"),
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
-    readJson(MARKETING_BINDINGS_FILE, {}),
   ]);
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
     visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
   }));
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
+  const productMarketingEntries = parseProductMarketing(productMarketingText);
   const facts = parseProductFacts(scriptText);
   const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && entry.name !== "产品模板");
@@ -124,10 +128,10 @@ async function loadState() {
     products,
     templates,
     productStyles,
+    productMarketingEntries,
     marketingCoverage: Object.fromEntries([...marketing].map(([group, rows]) => [group, rows.size])),
     marketingRows: [...marketing].flatMap(([category, rows]) => [...rows].map(([number, copy]) => ({
       category, number, subtitle: copy.subtitle, support: copy.support, points: copy.points, footer: copy.footer,
-      pointTargets: marketingBindings[category]?.[number] || copy.points.map(() => ["all"]),
     }))),
     aiAnalysisAvailable: Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_VISION_MODEL),
   };
@@ -254,16 +258,43 @@ async function apiSaveMarketing(body) {
   }
   await fs.writeFile(MARKETING_FILE, serializeMarketing(body.rows), "utf8");
   await fs.writeFile(MARKETING_EXTRAS_FILE, serializeMarketingExtras(body.rows), "utf8");
-  const bindings = {};
-  for (const row of body.rows) {
-    bindings[row.category] ||= {};
-    bindings[row.category][row.number] = (row.points || []).map((_, index) => {
-      const targets = row.pointTargets?.[index];
-      return Array.isArray(targets) && targets.length ? targets.map(String) : ["all"];
-    });
-  }
-  await fs.writeFile(MARKETING_BINDINGS_FILE, `${JSON.stringify(bindings, null, 2)}\n`, "utf8");
   return { ok: true };
+}
+
+async function apiSaveProductMarketing(body) {
+  if (!Array.isArray(body.entries)) throw new Error("产品营销词数据无效");
+  const state = await loadState();
+  const productNames = new Set(state.products.map((item) => item.name));
+  const categories = new Set(state.categories);
+  const validScopes = new Set(["global", "category", "product"]);
+  const validRegions = new Set(["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"]);
+  for (const entry of body.entries) {
+    if (!validScopes.has(entry.scope)) throw new Error("营销词作用范围无效");
+    if (!validRegions.has(entry.region)) throw new Error(`未知位置类型：${entry.region}`);
+    if (!String(entry.text || "").trim()) throw new Error("营销文案不能为空");
+    if (String(entry.text).includes("|")) throw new Error("营销文案不能使用英文半角竖线");
+    if (entry.scope === "category" && !categories.has(entry.category)) throw new Error(`未知分类：${entry.category}`);
+    if (entry.scope === "product" && !productNames.has(entry.product)) throw new Error(`未知产品：${entry.product}`);
+  }
+  await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(body.entries), "utf8");
+  return { ok: true };
+}
+
+function resolveCheckedMarketing(entries, product, template) {
+  const copy = resolveProductMarketing(entries, product, template);
+  if (template.points > 0 && copy.points.length < template.points) {
+    throw new Error(`产品【${product.name}】可用卖点不足：模板【${template.number}】需要${template.points}条，请补充产品专属、分类通用或全局通用营销词`);
+  }
+  if (template.subtitleSource === "副标题" && !copy.subtitle) {
+    throw new Error(`产品【${product.name}】缺少可用副标题`);
+  }
+  if (template.subtitleSource === "辅助文案" && !copy.support) {
+    throw new Error(`产品【${product.name}】缺少可用辅助文案`);
+  }
+  if (template.bottomSource !== "自动用量" && !copy.footer) {
+    throw new Error(`产品【${product.name}】缺少可用底栏文案`);
+  }
+  return copy;
 }
 
 async function apiGeneratePrompts(body) {
@@ -272,21 +303,18 @@ async function apiGeneratePrompts(body) {
   const selectedTemplates = new Set(body.templates || []);
   const templates = state.templates.filter((item) => selectedTemplates.has(item.number));
   if (!templates.length) throw new Error("请至少选择一个模板");
-  const marketing = mergeMarketingExtras(
-    parseMarketing(await fs.readFile(MARKETING_FILE, "utf8")),
-    parseMarketingExtras(await fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => "")),
-  );
-  const marketingBindings = await readJson(MARKETING_BINDINGS_FILE, {});
-  for (const [category, rows] of marketing) {
-    for (const [number, copy] of rows) {
-      copy.pointTargets = marketingBindings[category]?.[number] || copy.points.map(() => ["all"]);
-    }
-  }
+  const productMarketing = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8"));
   const generated = [];
   const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
   if (body.mode === "combined") {
     if (chosenProducts.length < 2) throw new Error("多产品组合模式请至少选择两个产品");
-    const markdown = generateCombinedPromptMarkdown({ products: chosenProducts, templates, marketingByCategory: marketing });
+    const combinedRows = new Map(templates.map((template) => [
+      template.number, resolveCheckedMarketing(productMarketing, chosenProducts[0], template),
+    ]));
+    const markdown = generateCombinedPromptMarkdown({
+      products: chosenProducts, templates,
+      marketingByCategory: new Map([[chosenProducts[0].category, combinedRows]]),
+    });
     const combinedRoot = path.join(DATA_ROOT, "生图提示词", "多产品组合");
     await fs.mkdir(combinedRoot, { recursive: true });
     const safeName = chosenProducts.map((item) => item.name).join("＋").slice(0, 80);
@@ -295,8 +323,9 @@ async function apiGeneratePrompts(body) {
     return { ok: true, generated: [path.relative(DATA_ROOT, target).replaceAll("\\", "/")] };
   }
   for (const product of chosenProducts) {
-    const rows = marketing.get(product.category);
-    if (!rows) throw new Error(`分类【${product.category}】没有营销词配置`);
+    const rows = new Map(templates.map((template) => [
+      template.number, resolveCheckedMarketing(productMarketing, product, template),
+    ]));
     const markdown = generatePromptMarkdown({ product, templates, marketingRows: rows });
     const target = await nextPromptPath(path.join(PRODUCT_ROOT, product.category), product.name);
     await fs.writeFile(target, markdown, "utf8");
@@ -382,6 +411,7 @@ const server = http.createServer(async (request, response) => {
         "/api/products/tags": apiSaveTags,
         "/api/templates/save": apiSaveTemplates,
         "/api/marketing/save": apiSaveMarketing,
+        "/api/product-marketing/save": apiSaveProductMarketing,
         "/api/prompts/generate": apiGeneratePrompts,
         "/api/references/import": apiImportReference,
       };

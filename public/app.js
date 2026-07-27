@@ -69,12 +69,10 @@ function renderAll() {
 
 function renderMarketingNavigation() {
   const previousCategory = $("#marketing-category").value || state.data.categories[0];
-  const previousTemplate = $("#marketing-template").value || state.data.templates[0]?.number;
   $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
-  $("#marketing-template").innerHTML = state.data.templates.map((item) => `<option value="${item.number}">${item.number} · ${item.name}</option>`).join("");
   $("#marketing-category").value = state.data.categories.includes(previousCategory) ? previousCategory : state.data.categories[0];
-  $("#marketing-template").value = state.data.templates.some((item) => item.number === previousTemplate) ? previousTemplate : state.data.templates[0]?.number;
-  loadMarketingForm();
+  fillMarketingProducts();
+  renderProductCopies();
 }
 
 function renderMetrics() {
@@ -207,9 +205,29 @@ function layoutElementLabel(key, box = {}) {
 }
 
 function currentPreviewCopy() {
-  const category = state.previewCategory || state.data?.categories?.[0];
-  const number = $("#tpl-number")?.value?.trim().padStart(2, "0");
-  return state.data?.marketingRows?.find((row) => row.category === category && row.number === number) || null;
+  const product = currentPreviewProduct();
+  if (!product) return null;
+  const entries = state.data.productMarketingEntries || [];
+  const used = new Set();
+  const rank = (entry) => entry.scope === "product" && entry.product === product.name ? 3
+    : entry.scope === "category" && entry.category === product.category ? 2 : entry.scope === "global" ? 1 : 0;
+  const pick = (region) => {
+    const entry = entries.filter((item) => item.enabled !== false && rank(item) > 0 && (item.region === region || item.region === "不限位置"))
+      .sort((a, b) => rank(b) - rank(a) || (b.priority || 0) - (a.priority || 0))
+      .find((item) => item.text && !used.has(item.text));
+    if (entry) used.add(entry.text);
+    return entry?.text || "";
+  };
+  const pointBoxes = Object.values(state.editingVisualLayout?.elements || {})
+    .filter((box) => box.visible !== false && box.type === "sellingPoint")
+    .sort((a, b) => (a.y || 0) - (b.y || 0))
+    .slice(0, Number($("#tpl-points")?.value || 0));
+  return {
+    subtitle: pick("副标题"),
+    support: pick("辅助文案"),
+    points: pointBoxes.map((box) => pick(box.copyRegion || "侧栏卖点")),
+    footer: pick("底栏文案") || pick("底部卖点"),
+  };
 }
 
 function currentPreviewProduct() {
@@ -252,6 +270,7 @@ function normalizeVisualLayout(layout) {
     box.binding ||= key.startsWith("product") ? `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}` : key === "title" ? "productName" : key === "subtitle" ? "subtitle" : key.startsWith("point") ? key : key === "net" ? "net" : key === "footer" ? "footer" : "custom";
     if (box.type === "product" && box.binding === "custom") box.binding = `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}`;
     if (box.type !== "product" && box.fontRatio == null) box.fontRatio = 0.8;
+    if (box.type === "sellingPoint" && !box.copyRegion) box.copyRegion = box.y < 25 ? "顶部卖点" : box.y > 72 ? "底部卖点" : "侧栏卖点";
     box.text ||= box.type === "animalRegion" ? "与产品分类相符的真实动物" : box.type === "backgroundRegion" ? "真实干净的使用场景" : "";
     clampBox(box);
   }
@@ -384,6 +403,7 @@ function renderLayoutProperties() {
   const contentLabel = box.type === "animalRegion" ? "动物及场景要求" : box.type === "backgroundRegion" ? "背景描述" : box.binding === "custom" ? "实际显示文字" : "补充要求";
   panel.innerHTML = `<label>名称<input data-box-text="label" value="${box.label || ""}"></label><label>形状<select data-box-text="shape">${shapeOptions}</select></label><label>内容绑定<select data-box-text="binding">${bindingOptions}</select></label><label>${contentLabel}<input data-box-text="text" value="${box.text || ""}"></label>`
     + ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
+    + (box.type === "sellingPoint" ? `<label>营销词位置<select data-box-text="copyRegion">${["顶部卖点","侧栏卖点","底部卖点"].map((region) => `<option ${box.copyRegion === region ? "selected" : ""}>${region}</option>`).join("")}</select></label>` : "")
     + (box.type === "product" ? "" : `<label>字号占框高%<input type="number" min="10" max="100" step="5" data-box-ratio value="${Math.round((box.fontRatio ?? 0.8) * 100)}"></label>`)
     + `<button type="button" id="remove-layout-element">删除元素</button>`;
   $$("[data-box-field]").forEach((input) => input.oninput = () => {
@@ -554,84 +574,71 @@ function fillPreviewProducts() {
   });
 }
 
-function marketingRow(category, number) {
-  return state.data.marketingRows.find((row) => row.category === category && row.number === number);
-}
-
-function openMarketingEditor(number = null, category = null) {
-  number ||= state.data.templates[0]?.number;
-  category ||= state.previewCategory || state.data.categories[0];
-  $("#marketing-category").innerHTML = state.data.categories.map((item) => `<option value="${item}">${item}</option>`).join("");
-  $("#marketing-template").innerHTML = state.data.templates.map((item) => `<option value="${item.number}">${item.number} · ${item.name}</option>`).join("");
-  $("#marketing-category").value = category;
-  $("#marketing-template").value = state.data.templates.some((item) => item.number === number) ? number : state.data.templates[0]?.number;
-  loadMarketingForm();
-  switchView("marketing");
-}
-
-function commitMarketingFormToDraft() {
-  if (!state.marketingDraft) return;
-  state.marketingDraft.subtitle = $("#marketing-subtitle").value.trim();
-  state.marketingDraft.support = $("#marketing-support").value.trim();
-  state.marketingDraft.footer = $("#marketing-footer").value.trim();
-  state.marketingDraft.points = $$("[data-marketing-point]").map((input) => input.value.trim());
-  state.marketingDraft.pointTargets = state.marketingDraft.points.map((_, index) =>
-    $$(`[data-target-index="${index}"]:checked`).map((input) => input.value)
-  );
-}
-
-function loadMarketingForm() {
+function fillMarketingProducts() {
   const category = $("#marketing-category").value;
-  const number = $("#marketing-template").value;
-  const source = marketingRow(category, number) || { category, number, subtitle: "", support: "", points: ["", "", ""], pointTargets: [["all"],["all"],["all"]], footer: "" };
-  state.editingMarketingKey = `${category}\0${number}`;
-  state.marketingDraft = structuredClone(source);
-  state.marketingDraft.pointTargets ||= source.points.map(() => ["all"]);
-  $("#marketing-subtitle").value = source.subtitle || "";
-  $("#marketing-support").value = source.support || "";
-  $("#marketing-footer").value = source.footer || "";
-  $("#marketing-status").textContent = `正在编辑【${category}】模板 ${number}；画布保存后会立即使用这些文案。`;
-  renderMarketingPoints();
+  const products = state.data.products.filter((item) => item.category === category);
+  const previous = $("#marketing-product").value;
+  $("#marketing-product").innerHTML = products.map((item) => `<option value="${item.name}">${item.name}</option>`).join("");
+  if (products.some((item) => item.name === previous)) $("#marketing-product").value = previous;
 }
 
-function renderMarketingPoints() {
-  const points = state.marketingDraft?.points || [];
-  $("#marketing-points").innerHTML = points.map((point, index) => {
-    const targets = state.marketingDraft.pointTargets?.[index] || ["all"];
-    const targetChecks = [["all","全部"], ...Array.from({length:6},(_,slot)=>[`product${slot+1}`,`产品${slot+1}`])]
-      .map(([value,label]) => `<label><input type="checkbox" data-target-index="${index}" value="${value}" ${targets.includes(value) ? "checked" : ""}>${label}</label>`).join("");
-    return `
-    <div class="marketing-point-row">
-      <span>${index + 1}</span><input value="${point}" data-marketing-point="${index}" placeholder="输入第${index + 1}条卖点">
-      <button type="button" data-point-up="${index}" title="上移">↑</button>
-      <button type="button" data-point-down="${index}" title="下移">↓</button>
-      <button type="button" class="remove" data-point-remove="${index}" title="删除">×</button>
-      <div class="point-targets">${targetChecks}</div>
-    </div>`;
-  }).join("");
-  $$("[data-marketing-point]").forEach((input) => input.oninput = () => state.marketingDraft.points[Number(input.dataset.marketingPoint)] = input.value);
-  $$("[data-target-index]").forEach((input) => input.onchange = () => {
-    const group = $$(`[data-target-index="${input.dataset.targetIndex}"]`);
-    if (input.checked && input.value === "all") group.filter((item) => item !== input).forEach((item) => item.checked = false);
-    if (input.checked && input.value !== "all") group.find((item) => item.value === "all").checked = false;
-    if (!group.some((item) => item.checked)) group.find((item) => item.value === "all").checked = true;
+function currentMarketingFilter() {
+  return {
+    scope: $("#marketing-scope").value,
+    category: $("#marketing-category").value,
+    product: $("#marketing-product").value,
+  };
+}
+
+function filteredProductCopies() {
+  const filter = currentMarketingFilter();
+  return state.data.productMarketingEntries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.scope === filter.scope)
+    .filter(({ entry }) => filter.scope === "global" || entry.category === filter.category)
+    .filter(({ entry }) => filter.scope !== "product" || entry.product === filter.product);
+}
+
+function renderProductCopies() {
+  const filter = currentMarketingFilter();
+  $("#marketing-category-field").classList.toggle("hidden", filter.scope === "global");
+  $("#marketing-product-field").classList.toggle("hidden", filter.scope !== "product");
+  const items = filteredProductCopies();
+  $("#marketing-status").textContent = filter.scope === "global" ? "正在编辑全部产品通用营销词"
+    : filter.scope === "category" ? `正在编辑【${filter.category}】分类通用营销词`
+    : `正在编辑产品【${filter.product || "未选择"}】的专属营销词`;
+  const regions = ["顶部卖点","侧栏卖点","底部卖点","副标题","辅助文案","底栏文案","不限位置"];
+  $("#product-copy-list").innerHTML = items.map(({ entry, index }) => `
+    <div class="product-copy-row">
+      <input data-copy-field="text" data-copy-index="${index}" value="${entry.text}" placeholder="输入营销词">
+      <select data-copy-field="region" data-copy-index="${index}">${regions.map((region) => `<option ${entry.region === region ? "selected" : ""}>${region}</option>`).join("")}</select>
+      <label>优先级<input type="number" data-copy-field="priority" data-copy-index="${index}" value="${entry.priority || 0}"></label>
+      <label class="copy-enabled"><input type="checkbox" data-copy-field="enabled" data-copy-index="${index}" ${entry.enabled !== false ? "checked" : ""}>启用</label>
+      <button type="button" data-remove-copy="${index}">×</button>
+    </div>`).join("") || `<div class="summary-note">当前范围还没有营销词，点击下方按钮添加。</div>`;
+  $$("[data-copy-field]").forEach((input) => input.oninput = () => {
+    const entry = state.data.productMarketingEntries[Number(input.dataset.copyIndex)];
+    entry[input.dataset.copyField] = input.dataset.copyField === "priority" ? Number(input.value)
+      : input.dataset.copyField === "enabled" ? input.checked : input.value;
   });
-  $$("[data-point-up]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointUp), -1));
-  $$("[data-point-down]").forEach((button) => button.onclick = () => moveMarketingPoint(Number(button.dataset.pointDown), 1));
-  $$("[data-point-remove]").forEach((button) => button.onclick = () => {
-    const index = Number(button.dataset.pointRemove);
-    state.marketingDraft.points.splice(index, 1);
-    state.marketingDraft.pointTargets?.splice(index, 1);
-    renderMarketingPoints();
+  $$("[data-remove-copy]").forEach((button) => button.onclick = () => {
+    state.data.productMarketingEntries.splice(Number(button.dataset.removeCopy), 1);
+    renderProductCopies();
   });
 }
 
-function moveMarketingPoint(index, offset) {
-  const target = index + offset;
-  if (target < 0 || target >= state.marketingDraft.points.length) return;
-  [state.marketingDraft.points[index], state.marketingDraft.points[target]] = [state.marketingDraft.points[target], state.marketingDraft.points[index]];
-  if (state.marketingDraft.pointTargets) [state.marketingDraft.pointTargets[index], state.marketingDraft.pointTargets[target]] = [state.marketingDraft.pointTargets[target], state.marketingDraft.pointTargets[index]];
-  renderMarketingPoints();
+function addProductCopy() {
+  const filter = currentMarketingFilter();
+  state.data.productMarketingEntries.push({
+    scope: filter.scope,
+    category: filter.scope === "global" ? "*" : filter.category,
+    product: filter.scope === "product" ? filter.product : "*",
+    region: "侧栏卖点",
+    text: "",
+    priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
+    enabled: true,
+  });
+  renderProductCopies();
 }
 
 function nextTemplateNumber() {
@@ -824,25 +831,14 @@ $("#preview-category").onchange = (event) => {
   fillPreviewProducts();
   renderVisualEditor();
 };
-$("#marketing-category").onchange = loadMarketingForm;
-$("#marketing-template").onchange = loadMarketingForm;
-$("#add-marketing-point").onclick = () => {
-  commitMarketingFormToDraft();
-  state.marketingDraft.points.push("");
-  state.marketingDraft.pointTargets ||= [];
-  state.marketingDraft.pointTargets.push(["all"]);
-  renderMarketingPoints();
-};
+$("#marketing-scope").onchange = renderProductCopies;
+$("#marketing-category").onchange = () => { fillMarketingProducts(); renderProductCopies(); };
+$("#marketing-product").onchange = renderProductCopies;
+$("#add-product-copy").onclick = addProductCopy;
 $("#save-marketing-page").onclick = async () => {
   try {
-    commitMarketingFormToDraft();
-    if (!state.marketingDraft.subtitle || !state.marketingDraft.footer) throw new Error("副标题和底栏文案不能为空");
-    const rows = state.data.marketingRows.map((row) => structuredClone(row));
-    const index = rows.findIndex((row) => row.category === state.marketingDraft.category && row.number === state.marketingDraft.number);
-    if (index >= 0) rows[index] = state.marketingDraft;
-    else rows.push(state.marketingDraft);
-    await api("/api/marketing/save", { method: "POST", body: JSON.stringify({ rows }) });
-    state.previewCategory = state.marketingDraft.category;
+    if (state.data.productMarketingEntries.some((entry) => !entry.text.trim())) throw new Error("请填写或删除空白营销词");
+    await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({ entries: state.data.productMarketingEntries }) });
     await reload();
     renderVisualEditor();
     toast("营销文案已保存，模板预览已更新");
@@ -855,7 +851,7 @@ $("#layout-canvas").onpointerdown = (event) => {
   const key = draft.key;
   const start = canvasPoint(event);
   const box = normalizeVisualLayout({ elements: {
-    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: draft.type === "product" ? `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}` : "custom", text: "", shape: draft.type === "product" ? "none" : "rounded", fontRatio: draft.type === "product" ? null : 0.8 },
+    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: draft.type === "product" ? `product${Math.max(1, Number(key.match(/\d+$/)?.[0] || 1))}` : "custom", text: "", shape: draft.type === "product" ? "none" : "rounded", fontRatio: draft.type === "product" ? null : 0.8, copyRegion: draft.type === "sellingPoint" ? "侧栏卖点" : undefined },
   } }).elements[key];
   state.editingVisualLayout.elements[key] = box;
   const move = (moveEvent) => {
