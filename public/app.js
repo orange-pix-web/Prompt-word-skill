@@ -229,6 +229,7 @@ function normalizeVisualLayout(layout) {
     box.label ||= layoutElementLabel(key, box);
     box.shape ||= box.type === "product" ? "none" : box.type === "animalRegion" || box.type === "backgroundRegion" ? "rectangle" : "rounded";
     box.binding ||= key === "title" ? "productName" : key === "subtitle" ? "subtitle" : key.startsWith("point") ? key : key === "net" ? "net" : key === "footer" ? "footer" : "custom";
+    if (box.type !== "product" && box.fontRatio == null) box.fontRatio = 0.8;
     box.text ||= box.type === "animalRegion" ? "与产品分类相符的真实动物" : box.type === "backgroundRegion" ? "真实干净的使用场景" : "";
     clampBox(box);
   }
@@ -264,6 +265,12 @@ function defaultVisualLayout(number = "00", points = 3) {
   }
   for (let index = 1; index <= 3; index += 1) {
     elements[`point${index}`].visible = index <= points;
+  }
+  const pointShape = number === "04" ? "parallelogram" : number === "05" || number === "07" ? "pill" : number === "09" ? "none" : "rounded";
+  for (const [key, box] of Object.entries(elements)) {
+    box.shape = key === "product" || key === "title" || key === "subtitle" ? "none"
+      : key.startsWith("point") ? pointShape : key === "net" ? "pill" : key === "footer" ? "rectangle" : "rounded";
+    if (key !== "product") box.fontRatio = 0.8;
   }
   return normalizeVisualLayout({ canvas: 1024, elements });
 }
@@ -312,7 +319,10 @@ function renderVisualEditor() {
   $("#layout-canvas").innerHTML = Object.entries(elements)
     .filter(([, box]) => box?.visible !== false)
     .sort((a, b) => (a[1].z || 1) - (b[1].z || 1))
-    .map(([key, box]) => `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1}"><span class="layout-element-text">${resolvedLayoutText(key, box)}</span><i class="resize-handle"></i></div>`)
+    .map(([key, box]) => {
+      const fontSize = box.type === "product" ? "" : `font-size:clamp(8px,${Math.max(0.1, box.h * (box.fontRatio ?? 0.8))}cqw,72px);`;
+      return `<div class="layout-element shape-${box.shape || "rounded"} type-${box.type || inferElementType(key)} ${state.selectedLayoutElement === key ? "selected" : ""}" data-key="${key}" style="left:${box.x}%;top:${box.y}%;width:${box.w}%;height:${box.h}%;z-index:${box.z || 1};${fontSize}"><span class="layout-element-text">${resolvedLayoutText(key, box)}</span><i class="resize-handle"></i></div>`;
+    })
     .join("");
   renderLayoutProperties();
   $$("[data-add-element]").forEach((button) => button.onclick = () => {
@@ -348,6 +358,7 @@ function renderLayoutProperties() {
   const contentLabel = box.type === "animalRegion" ? "动物及场景要求" : box.type === "backgroundRegion" ? "背景描述" : box.binding === "custom" ? "实际显示文字" : "补充要求";
   panel.innerHTML = `<label>名称<input data-box-text="label" value="${box.label || ""}"></label><label>形状<select data-box-text="shape">${shapeOptions}</select></label><label>内容绑定<select data-box-text="binding">${bindingOptions}</select></label><label>${contentLabel}<input data-box-text="text" value="${box.text || ""}"></label>`
     + ["x","y","w","h","z"].map((field) => `<label>${field.toUpperCase()}<input type="number" step="1" data-box-field="${field}" value="${Math.round(box[field])}"></label>`).join("")
+    + (box.type === "product" ? "" : `<label>字号占框高%<input type="number" min="10" max="100" step="5" data-box-ratio value="${Math.round((box.fontRatio ?? 0.8) * 100)}"></label>`)
     + `<button type="button" id="remove-layout-element">删除元素</button>`;
   $$("[data-box-field]").forEach((input) => input.oninput = () => {
     box[input.dataset.boxField] = Number(input.value);
@@ -358,6 +369,11 @@ function renderLayoutProperties() {
     box[input.dataset.boxText] = input.value;
     renderVisualEditor();
   });
+  const ratioInput = panel.querySelector("[data-box-ratio]");
+  if (ratioInput) ratioInput.oninput = () => {
+    box.fontRatio = Math.max(0.1, Math.min(1, Number(ratioInput.value) / 100));
+    renderVisualEditor();
+  };
   $("#remove-layout-element").onclick = () => {
     box.visible = false;
     box.manualHidden = true;
@@ -721,7 +737,7 @@ $("#layout-canvas").onpointerdown = (event) => {
   const key = draft.key;
   const start = canvasPoint(event);
   const box = normalizeVisualLayout({ elements: {
-    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: "custom", text: "", shape: draft.type === "product" ? "none" : "rounded" },
+    [key]: { x: start.x, y: start.y, w: 3, h: 3, z: draft.type === "backgroundRegion" ? 1 : draft.type === "animalRegion" ? 2 : 5, visible: true, type: draft.type, label: draft.label, binding: "custom", text: "", shape: draft.type === "product" ? "none" : "rounded", fontRatio: draft.type === "product" ? null : 0.8 },
   } }).elements[key];
   state.editingVisualLayout.elements[key] = box;
   const move = (moveEvent) => {

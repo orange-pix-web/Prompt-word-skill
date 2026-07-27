@@ -10,6 +10,7 @@ import {
   generatePromptMarkdown,
   latestPromptVersion,
   nextPromptPath,
+  normalizeTemplateVisualLayout,
   parseMarketing,
   parseMarketingExtras,
   mergeMarketingExtras,
@@ -71,7 +72,7 @@ async function loadState() {
   ]);
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
-    visualLayout: layouts[template.number] || null,
+    visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
   }));
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
   const facts = parseProductFacts(scriptText);

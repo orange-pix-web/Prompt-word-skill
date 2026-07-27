@@ -7,6 +7,7 @@ import {
   parseMarketing,
   parseMarketingExtras,
   mergeMarketingExtras,
+  normalizeTemplateVisualLayout,
   serializeMarketing,
   serializeMarketingExtras,
   parseProductFacts,
@@ -64,7 +65,7 @@ test("生成所选模板提示词", () => {
   });
   assert.match(result, /生成1张/);
   assert.match(result, /提示词01/);
-  assert.match(result, /视觉高度约为副标题的80%/);
+  assert.match(result, /具体字号按照各卖点矩形框的字号比例执行/);
   assert.match(result, /现货直发｜厂家直发/);
 });
 
@@ -74,7 +75,7 @@ test("支持自定义数量卖点和可视化坐标", () => {
     points: 2, bottomSource: "底栏文案", bottomStyle: "标准单行", special: "无", netPosition: "产品附近",
     visualLayout: { canvas: 1024, elements: {
       title: { x: 6, y: 8, w: 42, h: 12, z: 5 },
-      point1: { x: 7, y: 35, w: 35, h: 8, z: 5 },
+      point1: { type: "sellingPoint", x: 7, y: 35, w: 35, h: 8, z: 5, shape: "rounded", fontRatio: 0.8 },
       point2: { x: 7, y: 46, w: 35, h: 8, z: 5 },
     } },
   }];
@@ -90,6 +91,16 @@ test("支持自定义数量卖点和可视化坐标", () => {
   assert.doesNotMatch(markdown, /【卖点三】/);
   assert.match(markdown, /1024×1024逻辑画布布局/);
   assert.match(markdown, /主标题位于画面左侧6%/);
+  assert.match(markdown, /圆角矩形底板/);
+  assert.match(markdown, /矩形框高度的80%/);
+});
+
+test("现有模板补全正式布局、底板和80%字号规则", () => {
+  const layout = normalizeTemplateVisualLayout(null, "04", 3);
+  assert.equal(layout.elements.point1.shape, "parallelogram");
+  assert.equal(layout.elements.point1.fontRatio, 0.8);
+  assert.equal(layout.elements.title.shape, "none");
+  assert.equal(layout.elements.footer.shape, "rectangle");
 });
 
 test("支持多产品组合主图", () => {
@@ -110,7 +121,7 @@ test("支持多产品组合主图", () => {
     marketingByCategory: new Map(),
   });
   assert.match(markdown, /【袋装产品】、【瓶装产品】/);
-  assert.match(markdown, /产品1：左侧8%/);
+  assert.match(markdown, /产品1位于画面左侧8%/);
   assert.match(markdown, /鸡鸭鹅背景/);
 });
 
