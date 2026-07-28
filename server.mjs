@@ -506,6 +506,12 @@ function resolveCheckedMarketing(entries, product, template) {
 
 async function apiGeneratePrompts(body) {
   const state = await loadState();
+  const validBackgroundModes = new Set(["product", "template", "custom"]);
+  const backgroundMode = validBackgroundModes.has(body.backgroundMode) ? body.backgroundMode : "product";
+  const backgroundNote = String(body.backgroundNote || "").trim();
+  if (backgroundMode === "custom" && !backgroundNote) throw new Error("请填写本次临时背景备注");
+  if (backgroundNote.length > 500) throw new Error("临时背景备注不能超过500字");
+  const knownProductNames = state.products.map((item) => item.name);
   const selectedProducts = new Set(body.products || []);
   const selectedTemplates = new Set(body.templates || []);
   const templates = state.templates.filter((item) => selectedTemplates.has(item.number));
@@ -534,6 +540,9 @@ async function apiGeneratePrompts(body) {
     const markdown = generateCombinedPromptMarkdown({
       products: chosenProducts, templates,
       marketingByCategory: new Map([[chosenProducts[0].category, combinedRows]]),
+      backgroundMode,
+      backgroundNote,
+      knownProductNames,
     });
     const combinedRoot = path.join(DATA_ROOT, "生图提示词", "多产品组合");
     await fs.mkdir(combinedRoot, { recursive: true });
@@ -546,7 +555,14 @@ async function apiGeneratePrompts(body) {
     const rows = new Map(templates.map((template) => [
       template.number, resolveCheckedMarketing(availableMarketing, product, template),
     ]));
-    const markdown = generatePromptMarkdown({ product, templates, marketingRows: rows });
+    const markdown = generatePromptMarkdown({
+      product,
+      templates,
+      marketingRows: rows,
+      backgroundMode,
+      backgroundNote,
+      knownProductNames,
+    });
     const target = await nextPromptPath(path.join(PRODUCT_ROOT, product.category), product.name);
     await fs.writeFile(target, markdown, "utf8");
     generated.push(path.relative(DATA_ROOT, target).replaceAll("\\", "/"));

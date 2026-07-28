@@ -191,6 +191,28 @@
               <div class="generation-copy-list hidden" id="generate-marketing-copies"></div>
               <small id="generate-marketing-copy-status">将按产品专属、分类通用、全局通用的顺序自动选择。</small>
             </div>
+            <div class="generation-background-options">
+              <strong>本次背景处理</strong>
+              <label>背景方式
+                <select id="generation-background-mode">
+                  <option value="product">自动适配当前产品（推荐）</option>
+                  <option value="template">保留模板原背景</option>
+                  <option value="custom">自定义临时背景备注</option>
+                </select>
+              </label>
+              <small id="generation-background-status">只继承模板的布局、配色和文字层级，原产品的专用场景、人物动作和工具不会直接照搬。</small>
+              <div class="generation-background-note hidden" id="generation-background-note-wrap">
+                <div class="generation-background-presets">
+                  <button type="button" class="btn ghost small" data-background-preset="使用干净明亮的日常养殖场景，可出现健康动物、饲料槽或饮水设施；禁止出现防护服人员、背负式喷雾器、喷洒水雾和消毒作业。">日常养殖</button>
+                  <button type="button" class="btn ghost small" data-background-preset="使用简洁干净的纯色棚拍或产品展示台背景，不出现人物、作业工具和喷雾场景。">纯色棚拍</button>
+                  <button type="button" class="btn ghost small" data-background-preset="使用自然明亮的户外养殖场景，动物作为背景，禁止出现消毒人员、喷雾器和喷洒水雾。">户外养殖</button>
+                </div>
+                <label>临时背景备注
+                  <textarea id="generation-background-note" maxlength="500" placeholder="例如：使用鸡鸭鹅日常养殖场景；禁止出现防护服人员、喷雾器、喷洒水雾和消毒作业。仅对本次生成生效。"></textarea>
+                </label>
+                <small>本备注不会保存到模板；与模板原背景冲突时，以这里为准。</small>
+              </div>
+            </div>
             <button class="btn primary large" id="generate-btn">生成所选提示词</button>
             <div class="result-box" id="generation-result">等待选择产品和模板</div>
             <div class="generated-folder-actions hidden" id="generated-folder-actions"></div>

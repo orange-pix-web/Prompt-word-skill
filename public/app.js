@@ -970,6 +970,18 @@ function updateSummary() {
     : state.selectedProducts.size * state.selectedTemplates.size;
 }
 
+function updateGenerationBackgroundControls() {
+  const mode = $("#generation-background-mode")?.value || "product";
+  const noteWrap = $("#generation-background-note-wrap");
+  if (noteWrap) noteWrap.classList.toggle("hidden", mode !== "custom");
+  const messages = {
+    product: "只继承模板的布局、配色和文字层级，原产品的专用场景、人物动作和工具不会直接照搬。",
+    template: "完整保留模板原背景；仅适合模板场景与当前产品实际用途一致时使用。",
+    custom: "自定义备注仅对本次生成生效；与模板原背景冲突时，以临时备注为准。",
+  };
+  if ($("#generation-background-status")) $("#generation-background-status").textContent = messages[mode];
+}
+
 function fillCategorySelects() {
   const options = state.data.categories.map((category) => `<option value="${category}">${category}</option>`).join("");
   $("#product-category").innerHTML = options;
@@ -1776,6 +1788,12 @@ $("#generate-clear-template-group").onclick = () => {
 $("#generation-mode").onchange = updateSummary;
 $$("[data-marketing-source]").forEach((input) => input.onchange = renderGenerationMarketingCopies);
 $("#marketing-selection-mode").onchange = renderGenerationMarketingCopies;
+$("#generation-background-mode").onchange = updateGenerationBackgroundControls;
+$$("[data-background-preset]").forEach((button) => button.onclick = () => {
+  $("#generation-background-mode").value = "custom";
+  $("#generation-background-note").value = button.dataset.backgroundPreset;
+  updateGenerationBackgroundControls();
+});
 $("#generate-btn").onclick = async () => {
   try {
     $("#generation-result").textContent = "正在生成…";
@@ -1788,6 +1806,8 @@ $("#generate-btn").onclick = async () => {
       marketingSources: selectedMarketingSources(),
       marketingSelectionMode: $("#marketing-selection-mode").value,
       marketingCopyKeys: [...state.selectedMarketingCopyKeys],
+      backgroundMode: $("#generation-background-mode").value,
+      backgroundNote: $("#generation-background-note").value.trim(),
     }) });
     $("#generation-result").textContent = `已生成 ${result.generated.length} 份文件\n${result.generated.join("\n")}`;
     state.lastGeneratedPaths = result.generated;

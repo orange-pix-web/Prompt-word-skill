@@ -188,6 +188,40 @@ test("生成所选模板提示词", () => {
   assert.match(result, /现货直发｜厂家直发/);
 });
 
+test("临时背景备注覆盖模板专用场景并清理其他产品名", () => {
+  const templates = [{
+    enabled: true,
+    number: "25",
+    name: "鸡舍夜景左右分栏",
+    layout: "暗色鸡舍背景，顶部大标题；产品占据左下，右侧为消毒作业人员，右下放大号含量卖点和蓝色底栏。",
+    subtitleSource: "无",
+    points: 1,
+    bottomSource: "底栏文案",
+    bottomStyle: "标准单行",
+    special: "只参考布局，主体必须替换为上传的【单过硫酸氢钾消毒粉】产品图。",
+    netPosition: "产品附近",
+  }];
+  const marketingRows = new Map([["25", {
+    subtitle: "", support: "", points: ["拌料即用"], footer: "蛋禽日常常备",
+  }]]);
+  const markdown = generatePromptMarkdown({
+    product: { name: "豆必清", imageName: "豆必清.png", category: "鸡鸭鹅禽类", net: "100g", form: "bag" },
+    templates,
+    marketingRows,
+    backgroundMode: "custom",
+    backgroundNote: "使用日常养殖场景，禁止出现防护服人员、喷雾器和消毒作业。",
+    knownProductNames: ["豆必清", "单过硫酸氢钾消毒粉"],
+  });
+  assert.match(markdown, /本次临时背景要求（最高优先级）/);
+  assert.match(markdown, /使用日常养殖场景/);
+  assert.match(markdown, /主体必须替换为上传的【豆必清】产品图/);
+  assert.doesNotMatch(markdown, /单过硫酸氢钾消毒粉/);
+  assert.doesNotMatch(markdown, /右侧为消毒作业人员/);
+  assert.doesNotMatch(markdown, /暗色鸡舍背景/);
+  assert.doesNotMatch(markdown, /鸡舍夜景左右分栏/);
+  assert.doesNotMatch(markdown, /作业。。/);
+});
+
 test("支持自定义数量卖点和可视化坐标", () => {
   const templates = [{
     enabled: true, number: "10", name: "自由布局", layout: "自定义布局", subtitleSource: "副标题",

@@ -406,6 +406,13 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .generation-copy-row strong, .generation-copy-row small { display: block; }
 .generation-copy-row strong { color: var(--ink); font-size: 10px; }
 .generation-copy-row small { margin-top: 2px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.generation-background-options { display: grid; gap: 9px; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #faf7f3; }
+.generation-background-options > strong { font-size: 11px; }
+.generation-background-options select { padding: 7px 8px; }
+.generation-background-options small { color: var(--muted); font-size: 9px; line-height: 1.55; }
+.generation-background-note { display: grid; gap: 8px; padding-top: 2px; }
+.generation-background-note textarea { min-height: 82px; resize: vertical; line-height: 1.55; }
+.generation-background-presets { display: flex; gap: 6px; flex-wrap: wrap; }
 .recycle-list { display: grid; gap: 10px; }
 .recycle-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
 .recycle-card h3 { margin: 6px 0 4px; font-size: 15px; }

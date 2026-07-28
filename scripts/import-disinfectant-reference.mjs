@@ -243,7 +243,7 @@ const templates = specs.map((spec) => ({
   points: (spec.points || []).length,
   bottomSource: spec.footer ? "底栏文案" : "辅助文案",
   bottomStyle: spec.footer?.h >= 16 ? "加高单行" : "标准单行",
-  special: `构图参考【${spec.reference}】；只参考布局、配色和文字层级，不复制参考图中的品牌、商标或产品包装，主体必须替换为上传的【${PRODUCT_NAME}】产品图。`,
+  special: `构图参考【${spec.reference}】；只参考布局、配色和文字层级，不复制参考图中的品牌、商标或产品包装，主体必须替换为上传的【当前所选产品】产品图。`,
   netPosition: spec.net ? "产品附近" : "产品附近",
   visualLayout: visualLayout(spec),
 }));
