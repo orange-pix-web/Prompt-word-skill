@@ -724,9 +724,15 @@ function renderGenerator() {
     ...state.data.templates.map((template) => template.group || "未分组"),
   ])];
   if (!templateGroups.includes(state.generateTemplateGroup)) state.generateTemplateGroup = "全部";
-  $("#generate-template-group").innerHTML = templateGroups
-    .map((group) => `<option value="${group}">${group}</option>`).join("");
-  $("#generate-template-group").value = state.generateTemplateGroup;
+  $("#generate-template-group-chips").innerHTML = templateGroups.map((group) => {
+    const count = group === "全部" ? state.data.templates.length
+      : state.data.templates.filter((template) => (template.group || "未分组") === group).length;
+    return `<button type="button" class="chip ${group === state.generateTemplateGroup ? "active" : ""}" data-generate-template-group="${group}">${group}<small>${count}</small></button>`;
+  }).join("");
+  $$("[data-generate-template-group]").forEach((button) => button.onclick = () => {
+    state.generateTemplateGroup = button.dataset.generateTemplateGroup;
+    renderGenerator();
+  });
   const visibleTemplates = state.data.templates.filter((template) =>
     state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup
   );
@@ -1521,10 +1527,6 @@ $("#generate-select-products").onclick = () => {
   const allSelected = state.selectedProducts.size === state.data.products.length;
   state.selectedProducts = allSelected ? new Set() : new Set(state.data.products.map((item) => item.name));
   renderGenerator(); renderProducts();
-};
-$("#generate-template-group").onchange = (event) => {
-  state.generateTemplateGroup = event.target.value;
-  renderGenerator();
 };
 $("#generate-select-templates").onclick = () => {
   const visible = state.data.templates.filter((template) =>

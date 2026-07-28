@@ -194,10 +194,12 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
 .panel-head > div { display: flex; align-items: center; gap: 9px; }
 .panel-head h2 { font-size: 16px; margin: 0; }
-.generator-template-filter { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 10px; padding: 10px; border-radius: 10px; background: #f7f1ea; }
-.generator-template-filter label { font-size: 9px; color: var(--muted); }
-.generator-template-filter select { margin-top: 4px; padding: 7px 8px; background: white; }
-.generator-template-filter span { grid-column: 1/-1; color: var(--muted); font-size: 9px; }
+.generator-template-filter { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px 12px; align-items: center; margin-bottom: 10px; padding: 10px; border-radius: 10px; background: #f7f1ea; }
+.generator-template-filter-label { color: var(--muted); font-size: 9px; font-weight: 800; white-space: nowrap; }
+.generator-template-filter .filter-chips { min-width: 0; flex-wrap: nowrap; overflow-x: auto; padding: 2px 0 5px; }
+.generator-template-filter .chip { flex: 0 0 auto; padding: 7px 11px; }
+.generator-template-filter .chip small { margin-left: 5px; opacity: .65; font-size: 8px; }
+.generator-template-filter #generate-template-group-count { grid-column: 2/-1; color: var(--muted); font-size: 9px; }
 .generator-template-strip { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x proximity; scrollbar-color: #c8b9ab transparent; }
 .generator-template-card { position: relative; flex: 0 0 215px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: white; scroll-snap-align: start; cursor: pointer; transition: .18s ease; }
 .generator-template-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(56,39,27,.1); }
@@ -461,6 +463,10 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
   .metric-grid, .generator-layout, .reference-workspace, .template-editor, .detail-layout, .json-import-fields, .json-guide-grid { grid-template-columns: 1fr; }
   .generator-layout { grid-template-areas: "products" "summary" "templates"; }
   .generator-template-card { flex-basis: 178px; }
+  .generator-template-filter { grid-template-columns: 1fr auto; }
+  .generator-template-filter-label { grid-column: 1/-1; }
+  .generator-template-filter .filter-chips { grid-column: 1/-1; }
+  .generator-template-filter #generate-template-group-count { grid-column: 1/-1; }
   .prompt-management-grid { grid-template-columns: 1fr; }
   .prompt-file-card { grid-template-columns: 46px minmax(0,1fr); }
   .prompt-file-icon { width: 44px; height: 52px; }
