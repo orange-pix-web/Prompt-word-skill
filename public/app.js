@@ -60,6 +60,8 @@ const JSON_ANALYSIS_PROMPT = `请分析我上传的中文电商主图参考图�
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const VIEW_STORAGE_KEY = "prompt-studio:active-view";
+const VALID_VIEWS = new Set(["products", "marketing", "templates", "generate", "references", "recycle"]);
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -132,6 +134,12 @@ async function load() {
   $("#data-root").textContent = state.data.dataRoot;
   for (const template of state.data.templates.filter((item) => item.enabled)) state.selectedTemplates.add(template.number);
   renderAll();
+  let savedView = state.view;
+  try {
+    const storedView = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (VALID_VIEWS.has(storedView)) savedView = storedView;
+  } catch {}
+  switchView(savedView);
 }
 
 function renderAll() {
@@ -778,7 +786,9 @@ function fillCategorySelects() {
 }
 
 function switchView(view) {
+  if (!VALID_VIEWS.has(view)) view = "products";
   state.view = view;
+  try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
   const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", references: "参考图分析", recycle: "回收站" };
   $("#page-title").textContent = labels[view];
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `view-${view}`));
@@ -821,6 +831,26 @@ function openTemplate(number = null, draft = null) {
   state.drawingLayoutElement = null;
   updateLivePreview();
   $("#template-dialog").showModal();
+}
+
+function closeProductDraft() {
+  if (!$("#product-dialog").open) return;
+  $("#product-dialog").close("cancel");
+  $("#product-form").reset();
+  toast("新产品未保存，已关闭");
+}
+
+function closeTemplateDraft() {
+  if (!$("#template-dialog").open) return;
+  const editingExisting = Boolean(state.editingTemplateNumber);
+  $("#template-dialog").close("cancel");
+  state.editingTemplateNumber = null;
+  state.editingVisualLayout = null;
+  state.originalVisualLayout = null;
+  state.selectedLayoutElement = null;
+  state.drawingLayoutElement = null;
+  state.pendingDeletedElements = [];
+  toast(editingExisting ? "模板修改未保存，已关闭" : "新模板未保存，已关闭");
 }
 
 function fillPreviewProducts() {
@@ -1157,12 +1187,18 @@ $("#new-category-btn").onclick = async () => {
   try { await api("/api/categories", { method: "POST", body: JSON.stringify({ name }) }); await reload(); toast("分类已创建"); } catch (error) { toast(error.message, true); }
 };
 $("#new-product-btn").onclick = () => {
+  $("#product-form").reset();
   $("#product-create-mode").value = "upload";
   $("#product-style-builder").classList.remove("active");
   $("#product-file-field").classList.remove("hidden");
   renderProductStyleBuilder();
   $("#product-dialog").showModal();
 };
+$$("[data-close-product-dialog]").forEach((button) => button.onclick = closeProductDraft);
+$("#product-dialog").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeProductDraft();
+});
 $("#product-create-mode").onchange = () => {
   const styled = $("#product-create-mode").value === "style";
   $("#product-style-builder").classList.toggle("active", styled);
@@ -1186,6 +1222,11 @@ $("#save-product-btn").onclick = async () => {
   } catch (error) { toast(error.message, true); }
 };
 $("#new-template-btn").onclick = () => openTemplate();
+$$("[data-close-template-dialog]").forEach((button) => button.onclick = closeTemplateDraft);
+$("#template-dialog").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeTemplateDraft();
+});
 $("#new-template-group").onclick = async () => {
   const name = prompt("请输入新的模板分组名称");
   const group = String(name || "").trim();

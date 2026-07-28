@@ -235,7 +235,7 @@
 
   <dialog id="product-dialog">
     <form method="dialog" class="dialog-card" id="product-form">
-      <div class="dialog-head"><div><p class="eyebrow">NEW PRODUCT</p><h2>添加产品</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">NEW PRODUCT</p><h2>添加产品</h2></div><button type="button" class="icon-btn" data-close-product-dialog aria-label="关闭添加产品">×</button></div>
       <div class="form-grid">
         <label class="wide">创建方式<select id="product-create-mode"><option value="upload">上传完整产品图</option><option value="style">使用透明包装模板</option></select></label>
         <label class="wide" id="product-file-field">产品图片<input type="file" id="product-file" accept="image/png,image/jpeg,image/webp"></label>
@@ -250,13 +250,13 @@
         <label>包装形态<select id="product-form-type"><option value="bag">袋装</option><option value="liquid">瓶装液体</option><option value="tablet">片状</option><option value="other">其他</option></select></label>
         <label class="wide">标签<input id="product-tags" placeholder="多个标签用逗号分隔"></label>
       </div>
-      <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-product-btn">保存产品</button></div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close-product-dialog>取消</button><button type="button" class="btn primary" id="save-product-btn">保存产品</button></div>
     </form>
   </dialog>
 
   <dialog id="template-dialog">
     <form method="dialog" class="dialog-card wide-dialog" id="template-form">
-      <div class="dialog-head"><div><p class="eyebrow">LAYOUT BLUEPRINT</p><h2 id="template-dialog-title">编辑模板</h2></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">LAYOUT BLUEPRINT</p><h2 id="template-dialog-title">编辑模板</h2></div><button type="button" class="icon-btn" data-close-template-dialog aria-label="关闭模板编辑器">×</button></div>
       <div class="template-editor">
         <div class="form-grid">
           <label>模板编号<input id="tpl-number" maxlength="2" required></label>
@@ -288,7 +288,7 @@
           </div>
         </div>
       </div>
-      <div class="dialog-actions"><button value="cancel" class="btn ghost">取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
+      <div class="dialog-actions"><button type="button" class="btn ghost" data-close-template-dialog>取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
     </form>
   </dialog>
 
