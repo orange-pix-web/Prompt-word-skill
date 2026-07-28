@@ -67,6 +67,16 @@
         </div>
         <div class="toolbar template-group-toolbar">
           <div class="filter-chips" id="template-group-filters"></div>
+          <div class="toolbar-spacer"></div>
+          <button class="btn ghost small" id="new-template-group">＋ 新建分组</button>
+          <button class="btn ghost small" id="rename-template-group">重命名分组</button>
+          <button class="btn ghost small" id="delete-template-group">删除分组</button>
+        </div>
+        <div class="selection-bar template-selection-bar">
+          <label><input type="checkbox" id="select-all-templates"> 全选当前分组</label>
+          <span id="selected-template-card-count">已选 0 个模板</span>
+          <select id="move-template-group"></select>
+          <button class="btn small" id="apply-template-group">移动到分组</button>
         </div>
         <div class="template-grid" id="template-grid"></div>
       </section>
@@ -85,7 +95,7 @@
             <div class="filter-chips" id="marketing-category-filters"></div>
           </div>
           <div class="marketing-status" id="marketing-status"></div>
-          <div class="product-grid marketing-product-grid" id="marketing-product-grid"></div>
+          <div class="marketing-name-grid" id="marketing-product-grid"></div>
           <div class="panel marketing-editor-panel" id="marketing-editor-panel">
             <div class="marketing-editor-heading">
               <div>
@@ -95,8 +105,17 @@
               <span id="marketing-editor-count"></span>
             </div>
             <div class="marketing-binding-help">模板只决定文案数量和位置。生成时优先使用产品专属词，不足时自动补充分类通用词和全局通用词。</div>
+            <div class="marketing-bulk-entry">
+              <label>批量添加营销文案
+                <textarea id="marketing-bulk-input" rows="5" placeholder="每行输入一条营销文案&#10;例如：&#10;科学配方&#10;品质保障&#10;厂家直发"></textarea>
+              </label>
+              <div>
+                <p>换行后每一行都会成为一条独立文案，添加后可为每条文案勾选多个位置属性。</p>
+                <button type="button" class="btn primary" id="add-bulk-product-copy">按换行批量添加</button>
+              </div>
+            </div>
             <div class="product-copy-list" id="product-copy-list"></div>
-            <button type="button" class="btn ghost wide" id="add-product-copy">＋ 添加营销词</button>
+            <button type="button" class="btn ghost wide" id="add-product-copy">＋ 添加一条营销词</button>
           </div>
         </div>
       </section>
@@ -128,6 +147,22 @@
                 <option value="combined">多个产品放在同一张主图</option>
               </select>
             </label>
+            <div class="generation-copy-options">
+              <strong>营销文案来源</strong>
+              <div class="generation-source-checks">
+                <label><input type="checkbox" value="product" data-marketing-source checked>产品专属</label>
+                <label><input type="checkbox" value="category" data-marketing-source checked>分类通用</label>
+                <label><input type="checkbox" value="global" data-marketing-source checked>全局通用</label>
+              </div>
+              <label>文案选择方式
+                <select id="marketing-selection-mode">
+                  <option value="auto">按优先级自动选择</option>
+                  <option value="selected">只使用我勾选的文案</option>
+                </select>
+              </label>
+              <div class="generation-copy-list hidden" id="generate-marketing-copies"></div>
+              <small id="generate-marketing-copy-status">将按产品专属、分类通用、全局通用的顺序自动选择。</small>
+            </div>
             <button class="btn primary large" id="generate-btn">生成所选提示词</button>
             <div class="result-box" id="generation-result">等待选择产品和模板</div>
           </div>

@@ -10,6 +10,7 @@ import {
   generateCombinedPromptMarkdown,
   generatePromptMarkdown,
   latestPromptVersion,
+  marketingRegions,
   nextPromptPath,
   normalizeTemplateVisualLayout,
   parseMarketing,
@@ -21,6 +22,7 @@ import {
   referenceJsonToTemplate,
   resolveProductMarketing,
   safeChildPath,
+  selectMarketingEntries,
   serializeTemplates,
   serializeMarketing,
   serializeMarketingExtras,
@@ -116,11 +118,19 @@ async function loadState() {
     readJson(TEMPLATE_GROUPS_FILE, {}),
     readRecycleBin(),
   ]);
+  const groupAssignments = templateGroups.assignments && typeof templateGroups.assignments === "object"
+    ? templateGroups.assignments : templateGroups;
+  const savedGroups = Array.isArray(templateGroups.groups) ? templateGroups.groups : [];
   const templates = parseTemplates(templateText).map((template) => ({
     ...template,
-    group: String(templateGroups[template.number] || "未分组"),
+    group: String(groupAssignments[template.number] || "未分组"),
     visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
   }));
+  const templateGroupList = [...new Set([
+    "未分组",
+    ...savedGroups.map(String),
+    ...templates.map((template) => template.group),
+  ].map((group) => group.trim()).filter(Boolean))];
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
   const productMarketingEntries = parseProductMarketing(productMarketingText);
   const facts = parseProductFacts(scriptText);
@@ -168,6 +178,7 @@ async function loadState() {
     categories: categoryEntries.map((entry) => entry.name).sort((a, b) => a.localeCompare(b, "zh-CN")),
     products,
     templates,
+    templateGroups: templateGroupList,
     productStyles,
     productMarketingEntries,
     recycleBin,
@@ -271,6 +282,10 @@ async function apiSaveTemplates(body) {
     if (numbers.has(template.number)) throw new Error(`模板编号重复：${template.number}`);
     numbers.add(template.number);
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
+    if (String(template.group || "").trim() === "全部") throw new Error("“全部”是筛选项，不能作为模板分组名称");
+  }
+  if (Array.isArray(body.groups) && body.groups.some((group) => String(group).trim() === "全部")) {
+    throw new Error("“全部”是筛选项，不能作为模板分组名称");
   }
   await backupFile(TEMPLATE_FILE, "主图模板配置.md");
   await backupFile(LAYOUT_FILE, "template-layouts.json");
@@ -281,9 +296,17 @@ async function apiSaveTemplates(body) {
     .filter((template) => template.visualLayout)
     .map((template) => [template.number, template.visualLayout]));
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
-  const templateGroups = Object.fromEntries(body.templates
+  const groupAssignments = Object.fromEntries(body.templates
     .map((template) => [template.number, String(template.group || "未分组").trim() || "未分组"]));
-  await fs.writeFile(TEMPLATE_GROUPS_FILE, `${JSON.stringify(templateGroups, null, 2)}\n`, "utf8");
+  const templateGroups = [...new Set([
+    "未分组",
+    ...(Array.isArray(body.groups) ? body.groups : []),
+    ...Object.values(groupAssignments),
+  ].map((group) => String(group).trim()).filter(Boolean))];
+  await fs.writeFile(TEMPLATE_GROUPS_FILE, `${JSON.stringify({
+    groups: templateGroups,
+    assignments: groupAssignments,
+  }, null, 2)}\n`, "utf8");
   const deletedElements = Array.isArray(body.deletedElements) ? body.deletedElements : [];
   await addRecycleItems(deletedElements.map((item) => ({
     type: "template-element",
@@ -324,7 +347,10 @@ async function apiSaveProductMarketing(body) {
   const validRegions = new Set(["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"]);
   for (const entry of body.entries) {
     if (!validScopes.has(entry.scope)) throw new Error("营销词作用范围无效");
-    if (!validRegions.has(entry.region)) throw new Error(`未知位置类型：${entry.region}`);
+    const regions = Array.isArray(entry.regions) && entry.regions.length ? entry.regions : [entry.region];
+    if (!regions.length || regions.some((region) => !validRegions.has(region))) {
+      throw new Error(`未知位置类型：${regions.join("、")}`);
+    }
     if (!String(entry.text || "").trim()) throw new Error("营销文案不能为空");
     if (String(entry.text).includes("|")) throw new Error("营销文案不能使用英文半角竖线");
     if (entry.scope === "category" && !categories.has(entry.category)) throw new Error(`未知分类：${entry.category}`);
@@ -351,7 +377,7 @@ async function apiRestoreRecycle(body) {
     if (!restored) throw new Error("回收站营销词数据损坏");
     const duplicate = current.some((entry) =>
       entry.scope === restored.scope && entry.category === restored.category && entry.product === restored.product
-      && entry.region === restored.region && entry.text === restored.text);
+      && marketingRegions(entry).join("、") === marketingRegions(restored).join("、") && entry.text === restored.text);
     if (!duplicate) {
       await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
       current.push(restored);
@@ -405,12 +431,25 @@ async function apiGeneratePrompts(body) {
   const templates = state.templates.filter((item) => selectedTemplates.has(item.number));
   if (!templates.length) throw new Error("请至少选择一个模板");
   const productMarketing = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8"));
+  const validSources = new Set(["product", "category", "global"]);
+  const selectedSources = new Set(Array.isArray(body.marketingSources)
+    ? body.marketingSources.filter((scope) => validSources.has(scope))
+    : [...validSources]);
+  if (!selectedSources.size) throw new Error("请至少选择一种营销文案来源");
+  const selectedCopyKeys = new Set(Array.isArray(body.marketingCopyKeys) ? body.marketingCopyKeys : []);
+  const manualCopies = body.marketingSelectionMode === "selected";
+  if (manualCopies && !selectedCopyKeys.size) throw new Error("请选择至少一条营销文案");
+  const availableMarketing = selectMarketingEntries(productMarketing, {
+    sources: [...selectedSources],
+    mode: manualCopies ? "selected" : "auto",
+    copyKeys: [...selectedCopyKeys],
+  });
   const generated = [];
   const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
   if (body.mode === "combined") {
     if (chosenProducts.length < 2) throw new Error("多产品组合模式请至少选择两个产品");
     const combinedRows = new Map(templates.map((template) => [
-      template.number, resolveCheckedMarketing(productMarketing, chosenProducts[0], template),
+      template.number, resolveCheckedMarketing(availableMarketing, chosenProducts[0], template),
     ]));
     const markdown = generateCombinedPromptMarkdown({
       products: chosenProducts, templates,
@@ -425,7 +464,7 @@ async function apiGeneratePrompts(body) {
   }
   for (const product of chosenProducts) {
     const rows = new Map(templates.map((template) => [
-      template.number, resolveCheckedMarketing(productMarketing, product, template),
+      template.number, resolveCheckedMarketing(availableMarketing, product, template),
     ]));
     const markdown = generatePromptMarkdown({ product, templates, marketingRows: rows });
     const target = await nextPromptPath(path.join(PRODUCT_ROOT, product.category), product.name);

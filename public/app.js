@@ -5,6 +5,8 @@ const state = {
   search: "",
   selectedProducts: new Set(),
   selectedTemplates: new Set(),
+  selectedTemplateCards: new Set(),
+  selectedMarketingCopyKeys: new Set(),
   templateGroup: "全部",
   marketingScope: "product",
   marketingCategory: "全部",
@@ -113,6 +115,18 @@ function formatSize(bytes) {
   return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
 
+const MARKETING_REGIONS = ["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"];
+
+function entryRegions(entry = {}) {
+  const values = Array.isArray(entry.regions) && entry.regions.length
+    ? entry.regions : String(entry.region || "不限位置").split(/[、,，]/);
+  return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function marketingCopyKey(entry = {}) {
+  return [entry.scope || "", entry.category || "*", entry.product || "*", String(entry.text || "").trim()].join("\u001f");
+}
+
 async function load() {
   state.data = await api("/api/state");
   $("#data-root").textContent = state.data.dataRoot;
@@ -186,17 +200,10 @@ function renderMarketingProductGrid() {
   grid.classList.toggle("hidden", state.marketingScope !== "product");
   grid.innerHTML = products.map((product) => {
     const count = productMarketingCount(product);
-    return `
-      <article class="product-card marketing-product-card ${state.marketingProduct === product.name ? "selected" : ""}" data-marketing-product="${product.name}">
-        <span class="category-badge">${product.category}</span>
-        <div class="product-thumb"><img loading="lazy" src="${media(product.imagePath)}" alt="${product.name}"></div>
-        <div class="product-body">
-          <h3>${product.name}</h3>
-          <div class="product-meta"><span>${product.net}</span><span>${count} 条专属词</span></div>
-          <div class="tags">${product.tags.length ? product.tags.map((tag) => `<span class="tag">${tag}</span>`).join("") : `<span class="tag">待添加标签</span>`}</div>
-        </div>
-        <div class="card-foot"><button type="button">编辑营销文案</button></div>
-      </article>`;
+    return `<button type="button" class="marketing-name-card ${state.marketingProduct === product.name ? "selected" : ""}" data-marketing-product="${product.name}">
+      <strong>${product.name}</strong>
+      <span>${product.category} · ${count} 条专属词</span>
+    </button>`;
   }).join("") || `<div class="summary-note">没有符合条件的产品。</div>`;
   $$("[data-marketing-product]").forEach((card) => card.onclick = () => {
     state.marketingProduct = card.dataset.marketingProduct;
@@ -345,7 +352,10 @@ function currentPreviewCopy() {
   const rank = (entry) => entry.scope === "product" && entry.product === product.name ? 3
     : entry.scope === "category" && entry.category === product.category ? 2 : entry.scope === "global" ? 1 : 0;
   const pick = (region) => {
-    const entry = entries.filter((item) => item.enabled !== false && rank(item) > 0 && (item.region === region || item.region === "不限位置"))
+    const entry = entries.filter((item) => {
+      const regions = entryRegions(item);
+      return item.enabled !== false && rank(item) > 0 && (regions.includes(region) || regions.includes("不限位置"));
+    })
       .sort((a, b) => rank(b) - rank(a) || (b.priority || 0) - (a.priority || 0))
       .find((item) => item.text && !used.has(item.text));
     if (entry) used.add(entry.text);
@@ -616,7 +626,10 @@ function beginMoveLayoutElement(event, key, resizing) {
 }
 
 function renderTemplates() {
-  const groups = ["全部", ...new Set(state.data.templates.map((template) => template.group || "未分组"))];
+  const groups = ["全部", ...new Set([
+    ...(state.data.templateGroups || ["未分组"]),
+    ...state.data.templates.map((template) => template.group || "未分组"),
+  ])];
   if (!groups.includes(state.templateGroup)) state.templateGroup = "全部";
   $("#template-group-filters").innerHTML = groups.map((group) =>
     `<button class="chip ${group === state.templateGroup ? "active" : ""}" data-template-group="${group}">${group}</button>`
@@ -628,8 +641,17 @@ function renderTemplates() {
   const templates = state.data.templates.filter((template) =>
     state.templateGroup === "全部" || (template.group || "未分组") === state.templateGroup
   );
+  $("#select-all-templates").checked = Boolean(templates.length) && templates.every((template) => state.selectedTemplateCards.has(template.number));
+  $("#select-all-templates").indeterminate = templates.some((template) => state.selectedTemplateCards.has(template.number))
+    && !templates.every((template) => state.selectedTemplateCards.has(template.number));
+  $("#move-template-group").innerHTML = groups.filter((group) => group !== "全部")
+    .map((group) => `<option value="${group}">${group}</option>`).join("");
+  $("#selected-template-card-count").textContent = `已选 ${state.selectedTemplateCards.size} 个模板`;
+  $("#rename-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
+  $("#delete-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
   $("#template-grid").innerHTML = templates.map((template) => `
-    <article class="template-card">
+    <article class="template-card ${state.selectedTemplateCards.has(template.number) ? "selected" : ""}">
+      <input class="card-check" type="checkbox" data-select-template-card="${template.number}" ${state.selectedTemplateCards.has(template.number) ? "checked" : ""}>
       <div class="template-preview">${wireframe(template)}</div>
       <div class="template-info">
         <div class="template-info-head"><span class="template-number">TEMPLATE ${template.number}</span><span class="enabled-pill ${template.enabled ? "" : "off"}">${template.enabled ? "已启用" : "已停用"}</span></div>
@@ -641,6 +663,10 @@ function renderTemplates() {
       <div class="template-actions"><button class="text-btn" data-toggle-template="${template.number}">${template.enabled ? "停用" : "启用"}</button><button class="btn small" data-edit-template="${template.number}">编辑与预览</button></div>
     </article>
   `).join("") || `<div class="summary-note">该分组还没有模板。</div>`;
+  $$("[data-select-template-card]").forEach((input) => input.onchange = () => {
+    input.checked ? state.selectedTemplateCards.add(input.dataset.selectTemplateCard) : state.selectedTemplateCards.delete(input.dataset.selectTemplateCard);
+    renderTemplates();
+  });
   $$("[data-edit-template]").forEach((button) => button.onclick = () => openTemplate(button.dataset.editTemplate));
   $$("[data-toggle-template]").forEach((button) => button.onclick = async () => {
     const template = state.data.templates.find((item) => item.number === button.dataset.toggleTemplate);
@@ -667,7 +693,55 @@ function renderGenerator() {
     input.checked ? state.selectedTemplates.add(input.dataset.gTemplate) : state.selectedTemplates.delete(input.dataset.gTemplate);
     updateSummary();
   });
+  renderGenerationMarketingCopies();
   updateSummary();
+}
+
+function selectedMarketingSources() {
+  return $$("[data-marketing-source]:checked").map((input) => input.value);
+}
+
+function generationMarketingEntries() {
+  const sources = new Set(selectedMarketingSources());
+  const products = state.data.products.filter((product) => state.selectedProducts.has(product.name));
+  const productNames = new Set(products.map((product) => product.name));
+  const categories = new Set(products.map((product) => product.category));
+  return state.data.productMarketingEntries.filter((entry) =>
+    entry.enabled !== false &&
+    sources.has(entry.scope) &&
+    (entry.scope === "global" ||
+      (entry.scope === "category" && categories.has(entry.category)) ||
+      (entry.scope === "product" && productNames.has(entry.product)))
+  );
+}
+
+function renderGenerationMarketingCopies() {
+  const container = $("#generate-marketing-copies");
+  if (!container || !state.data) return;
+  const selectedMode = $("#marketing-selection-mode").value === "selected";
+  const entries = generationMarketingEntries();
+  const availableKeys = new Set(entries.map(marketingCopyKey));
+  const activeSelectedCount = [...state.selectedMarketingCopyKeys].filter((key) => availableKeys.has(key)).length;
+  container.classList.toggle("hidden", !selectedMode);
+  const scopeLabels = { product: "产品专属", category: "分类通用", global: "全局通用" };
+  container.innerHTML = entries.map((entry) => {
+    const key = marketingCopyKey(entry);
+    const owner = entry.scope === "product" ? entry.product : entry.scope === "category" ? entry.category : "全部产品";
+    return `<label class="generation-copy-row">
+      <input type="checkbox" data-generation-copy-key="${encodeURIComponent(key)}" ${state.selectedMarketingCopyKeys.has(key) ? "checked" : ""}>
+      <span><strong>${entry.text}</strong><small>${scopeLabels[entry.scope]} · ${owner} · ${entryRegions(entry).join("、")}</small></span>
+    </label>`;
+  }).join("") || `<div class="summary-note">当前产品和来源范围内没有可用营销文案。</div>`;
+  $$("[data-generation-copy-key]").forEach((input) => input.onchange = () => {
+    const key = decodeURIComponent(input.dataset.generationCopyKey);
+    input.checked ? state.selectedMarketingCopyKeys.add(key) : state.selectedMarketingCopyKeys.delete(key);
+    const currentAvailable = new Set(generationMarketingEntries().map(marketingCopyKey));
+    const count = [...state.selectedMarketingCopyKeys].filter((item) => currentAvailable.has(item)).length;
+    $("#generate-marketing-copy-status").textContent = `已勾选 ${count} 条当前可用文案；同一文案即使有多个位置属性，在单张主图中也只会使用一次。`;
+  });
+  $("#generate-marketing-copy-status").textContent = selectedMode
+    ? `当前可选 ${entries.length} 条，已勾选 ${activeSelectedCount} 条；同一文案在单张主图中只使用一次。`
+    : "将按产品专属、分类通用、全局通用的顺序自动选择；可取消不需要的来源。";
 }
 
 function updateSummary() {
@@ -703,7 +777,10 @@ function openTemplate(number = null, draft = null) {
   $("#tpl-number").value = template.number;
   $("#tpl-number").disabled = Boolean(number);
   $("#tpl-name").value = template.name;
-  const groups = [...new Set(state.data.templates.map((item) => item.group || "未分组"))];
+  const groups = [...new Set([
+    ...(state.data.templateGroups || ["未分组"]),
+    ...state.data.templates.map((item) => item.group || "未分组"),
+  ])];
   $("#template-group-options").innerHTML = groups.map((group) => `<option value="${group}"></option>`).join("");
   $("#tpl-group").value = template.group || "未分组";
   $("#tpl-layout").value = template.layout;
@@ -781,19 +858,34 @@ function renderProductCopies() {
   $("#marketing-editor-eyebrow").textContent = filter.scope === "global" ? "GLOBAL COPY" : filter.scope === "category" ? "CATEGORY COPY" : "PRODUCT COPY";
   $("#marketing-editor-title").textContent = title;
   $("#marketing-editor-count").textContent = `${items.length} 条文案`;
-  const regions = ["顶部卖点","侧栏卖点","底部卖点","副标题","辅助文案","底栏文案","不限位置"];
   $("#product-copy-list").innerHTML = items.map(({ entry, index }) => `
     <div class="product-copy-row">
-      <input data-copy-field="text" data-copy-index="${index}" value="${entry.text}" placeholder="输入营销词">
-      <select data-copy-field="region" data-copy-index="${index}">${regions.map((region) => `<option ${entry.region === region ? "selected" : ""}>${region}</option>`).join("")}</select>
-      <label>优先级<input type="number" data-copy-field="priority" data-copy-index="${index}" value="${entry.priority || 0}"></label>
-      <label class="copy-enabled"><input type="checkbox" data-copy-field="enabled" data-copy-index="${index}" ${entry.enabled !== false ? "checked" : ""}>启用</label>
+      <div class="copy-main-fields">
+        <input data-copy-field="text" data-copy-index="${index}" value="${entry.text}" placeholder="输入营销词">
+        <label>优先级<input type="number" data-copy-field="priority" data-copy-index="${index}" value="${entry.priority || 0}"></label>
+        <label class="copy-enabled"><input type="checkbox" data-copy-field="enabled" data-copy-index="${index}" ${entry.enabled !== false ? "checked" : ""}>启用</label>
+      </div>
+      <div class="copy-region-options">
+        <span>可用位置（可多选）</span>
+        ${MARKETING_REGIONS.map((region) => `<label><input type="checkbox" data-copy-region="${region}" data-copy-index="${index}" ${entryRegions(entry).includes(region) ? "checked" : ""}>${region}</label>`).join("")}
+      </div>
       <button type="button" data-remove-copy="${index}">×</button>
     </div>`).join("") || `<div class="summary-note">当前范围还没有营销词，点击下方按钮添加。</div>`;
   $$("[data-copy-field]").forEach((input) => input.oninput = () => {
     const entry = state.data.productMarketingEntries[Number(input.dataset.copyIndex)];
     entry[input.dataset.copyField] = input.dataset.copyField === "priority" ? Number(input.value)
       : input.dataset.copyField === "enabled" ? input.checked : input.value;
+  });
+  $$("[data-copy-region]").forEach((input) => input.onchange = () => {
+    const entry = state.data.productMarketingEntries[Number(input.dataset.copyIndex)];
+    const selected = $$(`[data-copy-region][data-copy-index="${input.dataset.copyIndex}"]:checked`).map((item) => item.dataset.copyRegion);
+    if (!selected.length) {
+      input.checked = true;
+      return toast("每条营销文案至少需要一个位置属性", true);
+    }
+    entry.regions = selected;
+    entry.region = selected[0];
+    renderVisualEditor();
   });
   $$("[data-remove-copy]").forEach((button) => button.onclick = () => {
     const index = Number(button.dataset.removeCopy);
@@ -856,6 +948,7 @@ function addProductCopy() {
     scope: filter.scope,
     category: filter.scope === "global" ? "*" : filter.category,
     product: filter.scope === "product" ? filter.product : "*",
+    regions: ["侧栏卖点"],
     region: "侧栏卖点",
     text: "",
     priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
@@ -863,6 +956,36 @@ function addProductCopy() {
   });
   renderProductCopies();
   renderMarketingProductGrid();
+}
+
+function addBulkProductCopies() {
+  const lines = $("#marketing-bulk-input").value.split(/\r?\n/)
+    .map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return toast("请先按每行一条输入营销文案", true);
+  const filter = currentMarketingFilter();
+  if (filter.scope === "product" && !filter.product) return toast("请先选择一个产品", true);
+  if (filter.scope === "category" && !filter.category) return toast("请先选择一个分类", true);
+  const existing = new Set(filteredProductCopies().map(({ entry }) => entry.text));
+  let added = 0;
+  for (const text of lines) {
+    if (existing.has(text)) continue;
+    existing.add(text);
+    state.data.productMarketingEntries.push({
+      scope: filter.scope,
+      category: filter.scope === "global" ? "*" : filter.category,
+      product: filter.scope === "product" ? filter.product : "*",
+      regions: ["侧栏卖点"],
+      region: "侧栏卖点",
+      text,
+      priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
+      enabled: true,
+    });
+    added += 1;
+  }
+  $("#marketing-bulk-input").value = "";
+  renderProductCopies();
+  renderMarketingProductGrid();
+  toast(added ? `已添加 ${added} 条营销文案` : "这些文案已经存在");
 }
 
 function nextTemplateNumber() {
@@ -892,7 +1015,10 @@ function updateLivePreview() {
 }
 
 async function saveTemplates() {
-  await api("/api/templates/save", { method: "POST", body: JSON.stringify({ templates: state.data.templates }) });
+  await api("/api/templates/save", { method: "POST", body: JSON.stringify({
+    templates: state.data.templates,
+    groups: state.data.templateGroups,
+  }) });
   toast("模板配置已保存");
   await reload();
 }
@@ -913,9 +1039,14 @@ function openProductDetail(name) {
 async function reload() {
   const selectedProducts = new Set(state.selectedProducts);
   const selectedTemplates = new Set(state.selectedTemplates);
+  const selectedTemplateCards = new Set(state.selectedTemplateCards);
+  const selectedMarketingCopyKeys = new Set(state.selectedMarketingCopyKeys);
   state.data = await api("/api/state");
   state.selectedProducts = new Set([...selectedProducts].filter((name) => state.data.products.some((item) => item.name === name)));
   state.selectedTemplates = new Set([...selectedTemplates].filter((number) => state.data.templates.some((item) => item.number === number)));
+  state.selectedTemplateCards = new Set([...selectedTemplateCards].filter((number) => state.data.templates.some((item) => item.number === number)));
+  const availableCopyKeys = new Set(state.data.productMarketingEntries.map(marketingCopyKey));
+  state.selectedMarketingCopyKeys = new Set([...selectedMarketingCopyKeys].filter((key) => availableCopyKeys.has(key)));
   renderAll();
 }
 
@@ -1037,6 +1168,61 @@ $("#save-product-btn").onclick = async () => {
   } catch (error) { toast(error.message, true); }
 };
 $("#new-template-btn").onclick = () => openTemplate();
+$("#new-template-group").onclick = async () => {
+  const name = prompt("请输入新的模板分组名称");
+  const group = String(name || "").trim();
+  if (!group) return;
+  if (group === "全部" || state.data.templateGroups.includes(group)) return toast("该分组已存在", true);
+  state.data.templateGroups.push(group);
+  try {
+    await saveTemplates();
+    state.templateGroup = group;
+    renderTemplates();
+    toast(`已新建分组【${group}】`);
+  } catch (error) { toast(error.message, true); }
+};
+$("#rename-template-group").onclick = async () => {
+  if (["全部", "未分组"].includes(state.templateGroup)) return;
+  const previous = state.templateGroup;
+  const name = prompt("请输入新的分组名称", previous);
+  const group = String(name || "").trim();
+  if (!group || group === previous) return;
+  if (group === "全部" || state.data.templateGroups.includes(group)) return toast("该分组已存在", true);
+  state.data.templates.forEach((template) => {
+    if ((template.group || "未分组") === previous) template.group = group;
+  });
+  state.data.templateGroups = state.data.templateGroups.map((item) => item === previous ? group : item);
+  state.templateGroup = group;
+  try { await saveTemplates(); toast("分组已重命名"); } catch (error) { toast(error.message, true); }
+};
+$("#delete-template-group").onclick = async () => {
+  const group = state.templateGroup;
+  if (["全部", "未分组"].includes(group)) return;
+  if (!window.confirm(`确定删除模板分组【${group}】吗？该组模板会移入“未分组”。`)) return;
+  state.data.templates.forEach((template) => {
+    if ((template.group || "未分组") === group) template.group = "未分组";
+  });
+  state.data.templateGroups = state.data.templateGroups.filter((item) => item !== group);
+  state.templateGroup = "未分组";
+  try { await saveTemplates(); toast("分组已删除，原模板已移入未分组"); } catch (error) { toast(error.message, true); }
+};
+$("#select-all-templates").onchange = (event) => {
+  const visible = state.data.templates.filter((template) =>
+    state.templateGroup === "全部" || (template.group || "未分组") === state.templateGroup);
+  visible.forEach((template) => event.target.checked
+    ? state.selectedTemplateCards.add(template.number)
+    : state.selectedTemplateCards.delete(template.number));
+  renderTemplates();
+};
+$("#apply-template-group").onclick = async () => {
+  if (!state.selectedTemplateCards.size) return toast("请先勾选要归类的模板", true);
+  const group = $("#move-template-group").value;
+  state.data.templates.forEach((template) => {
+    if (state.selectedTemplateCards.has(template.number)) template.group = group;
+  });
+  state.selectedTemplateCards.clear();
+  try { await saveTemplates(); toast(`所选模板已移动到【${group}】`); } catch (error) { toast(error.message, true); }
+};
 $("#save-template-btn").onclick = async () => {
   try {
     const template = templateFromForm();
@@ -1050,6 +1236,7 @@ $("#save-template-btn").onclick = async () => {
     }
     await api("/api/templates/save", { method: "POST", body: JSON.stringify({
       templates: state.data.templates,
+      groups: state.data.templateGroups,
       deletedElements: state.pendingDeletedElements,
     }) });
     state.pendingDeletedElements = [];
@@ -1085,9 +1272,11 @@ $("#marketing-product-search").oninput = (event) => {
   renderProductCopies();
 };
 $("#add-product-copy").onclick = addProductCopy;
+$("#add-bulk-product-copy").onclick = addBulkProductCopies;
 $("#save-marketing-page").onclick = async () => {
   try {
     if (state.data.productMarketingEntries.some((entry) => !entry.text.trim())) throw new Error("请填写或删除空白营销词");
+    if (state.data.productMarketingEntries.some((entry) => !entryRegions(entry).length)) throw new Error("每条营销词至少需要一个位置属性");
     await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({
       entries: state.data.productMarketingEntries,
       deletedEntries: state.pendingDeletedMarketing.map((item) => item.entry),
@@ -1138,11 +1327,18 @@ $("#generate-select-templates").onclick = () => {
   renderGenerator();
 };
 $("#generation-mode").onchange = updateSummary;
+$$("[data-marketing-source]").forEach((input) => input.onchange = renderGenerationMarketingCopies);
+$("#marketing-selection-mode").onchange = renderGenerationMarketingCopies;
 $("#generate-btn").onclick = async () => {
   try {
     $("#generation-result").textContent = "正在生成…";
     const result = await api("/api/prompts/generate", { method: "POST", body: JSON.stringify({
-      products: [...state.selectedProducts], templates: [...state.selectedTemplates], mode: $("#generation-mode").value,
+      products: [...state.selectedProducts],
+      templates: [...state.selectedTemplates],
+      mode: $("#generation-mode").value,
+      marketingSources: selectedMarketingSources(),
+      marketingSelectionMode: $("#marketing-selection-mode").value,
+      marketingCopyKeys: [...state.selectedMarketingCopyKeys],
     }) });
     $("#generation-result").textContent = `已生成 ${result.generated.length} 份文件\n${result.generated.join("\n")}`;
     await reload(); toast("提示词生成完成");

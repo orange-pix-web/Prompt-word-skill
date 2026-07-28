@@ -4,6 +4,7 @@ import {
   generatePromptMarkdown,
   generateCombinedPromptMarkdown,
   latestPromptVersion,
+  marketingEntryKey,
   parseMarketing,
   parseMarketingExtras,
   mergeMarketingExtras,
@@ -17,6 +18,7 @@ import {
   resolveProductMarketing,
   serializeProductMarketing,
   safeChildPath,
+  selectMarketingEntries,
 } from "../lib/core.mjs";
 
 test("营销文案支持扩展卖点并可序列化", () => {
@@ -46,6 +48,40 @@ test("产品营销词按产品专属、分类通用、全局通用依次选择",
     } },
   });
   assert.deepEqual(copy.points, ["腺肌胃炎", "蛋禽肉禽", "品质保障"]);
+});
+
+test("同一营销文案可绑定多个位置但单张图只使用一次", () => {
+  const entries = [
+    { scope: "product", category: "鸡鸭鹅禽类", product: "腺肌胃康宁", regions: ["顶部卖点", "侧栏卖点"], text: "腺肌胃炎", priority: 100, enabled: true },
+    { scope: "category", category: "鸡鸭鹅禽类", product: "*", regions: ["侧栏卖点"], text: "品质保障", priority: 50, enabled: true },
+  ];
+  const serialized = serializeProductMarketing(entries);
+  assert.match(serialized, /顶部卖点、侧栏卖点/);
+  const copy = resolveProductMarketing(parseProductMarketing(serialized), {
+    name: "腺肌胃康宁", category: "鸡鸭鹅禽类",
+  }, {
+    points: 2,
+    visualLayout: { elements: {
+      point1: { type: "sellingPoint", copyRegion: "顶部卖点", y: 20 },
+      point2: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 30 },
+    } },
+  });
+  assert.deepEqual(copy.points, ["腺肌胃炎", "品质保障"]);
+});
+
+test("生成时可限制营销文案来源或只使用勾选文案", () => {
+  const entries = [
+    { scope: "product", category: "鸡鸭鹅禽类", product: "腺肌胃康宁", regions: ["侧栏卖点"], text: "产品专属词" },
+    { scope: "category", category: "鸡鸭鹅禽类", product: "*", regions: ["侧栏卖点"], text: "分类通用词" },
+    { scope: "global", category: "*", product: "*", regions: ["侧栏卖点"], text: "全局通用词" },
+  ];
+  assert.deepEqual(selectMarketingEntries(entries, { sources: ["product"] }).map((entry) => entry.text), ["产品专属词"]);
+  assert.deepEqual(selectMarketingEntries(entries, { sources: [] }), []);
+  assert.deepEqual(selectMarketingEntries(entries, {
+    sources: ["product", "category"],
+    mode: "selected",
+    copyKeys: [marketingEntryKey(entries[1])],
+  }).map((entry) => entry.text), ["分类通用词"]);
 });
 
 test("解析模板和营销词表格", () => {
