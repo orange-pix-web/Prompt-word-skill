@@ -772,9 +772,10 @@ function renderGenerator() {
   ])];
   if (!templateGroups.includes(state.generateTemplateGroup)) state.generateTemplateGroup = "全部";
   $("#generate-template-group-chips").innerHTML = templateGroups.map((group) => {
-    const count = group === "全部" ? state.data.templates.length
-      : state.data.templates.filter((template) => (template.group || "未分组") === group).length;
-    return `<button type="button" class="chip ${group === state.generateTemplateGroup ? "active" : ""}" data-generate-template-group="${group}">${group}<small>${count}</small></button>`;
+    const groupTemplates = group === "全部" ? state.data.templates
+      : state.data.templates.filter((template) => (template.group || "未分组") === group);
+    const selectedCount = groupTemplates.filter((template) => state.selectedTemplates.has(template.number)).length;
+    return `<button type="button" class="chip ${group === state.generateTemplateGroup ? "active" : ""}" data-generate-template-group="${group}">${group}<small>${selectedCount}/${groupTemplates.length}</small></button>`;
   }).join("");
   $$("[data-generate-template-group]").forEach((button) => button.onclick = () => {
     state.generateTemplateGroup = button.dataset.generateTemplateGroup;
@@ -783,7 +784,8 @@ function renderGenerator() {
   const visibleTemplates = state.data.templates.filter((template) =>
     state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup
   );
-  $("#generate-template-group-count").textContent = `当前显示 ${visibleTemplates.length} 个模板`;
+  const visibleSelectedCount = visibleTemplates.filter((template) => state.selectedTemplates.has(template.number)).length;
+  $("#generate-template-group-count").textContent = `当前显示 ${visibleTemplates.length} 个模板，已选 ${visibleSelectedCount} 个；全部共选 ${state.selectedTemplates.size} 个`;
   $("#generate-products").innerHTML = products.map((product) => `
     <label class="check-row"><input type="checkbox" data-g-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
   `).join("");
@@ -806,9 +808,29 @@ function renderGenerator() {
   $$("[data-g-template]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedTemplates.add(input.dataset.gTemplate) : state.selectedTemplates.delete(input.dataset.gTemplate);
     input.closest(".generator-template-card")?.classList.toggle("selected", input.checked);
-    updateSummary();
+    updateGeneratorTemplateSelectionMeta();
   });
   renderGenerationMarketingCopies();
+  updateGeneratorTemplateSelectionMeta();
+}
+
+function updateGeneratorTemplateSelectionMeta() {
+  $$("[data-generate-template-group]").forEach((button) => {
+    const group = button.dataset.generateTemplateGroup;
+    const templates = group === "全部" ? state.data.templates
+      : state.data.templates.filter((template) => (template.group || "未分组") === group);
+    const selectedCount = templates.filter((template) => state.selectedTemplates.has(template.number)).length;
+    const count = button.querySelector("small");
+    if (count) count.textContent = `${selectedCount}/${templates.length}`;
+  });
+  const visible = state.data.templates.filter((template) =>
+    state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup);
+  const selectedVisible = visible.filter((template) => state.selectedTemplates.has(template.number)).length;
+  $("#generate-template-group-count").textContent = `当前显示 ${visible.length} 个模板，已选 ${selectedVisible} 个；全部共选 ${state.selectedTemplates.size} 个`;
+  $("#generate-clear-templates").disabled = state.selectedTemplates.size === 0;
+  $("#generate-select-templates").disabled = !state.data.templates.some((template) => template.enabled && !state.selectedTemplates.has(template.number));
+  $("#generate-select-template-group").disabled = !visible.length || selectedVisible === visible.length;
+  $("#generate-clear-template-group").disabled = selectedVisible === 0;
   updateSummary();
 }
 
@@ -1730,16 +1752,25 @@ $("#generate-select-products").onclick = () => {
   renderGenerator(); renderProducts();
 };
 $("#generate-select-templates").onclick = () => {
-  const visible = state.data.templates.filter((template) =>
-    (state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup)
-    && template.enabled);
-  state.selectedTemplates = new Set(visible.map((template) => template.number));
+  state.data.templates.filter((template) => template.enabled)
+    .forEach((template) => state.selectedTemplates.add(template.number));
+  renderGenerator();
+};
+$("#generate-clear-templates").onclick = () => {
+  state.selectedTemplates.clear();
   renderGenerator();
 };
 $("#generate-select-template-group").onclick = () => {
   const visible = state.data.templates.filter((template) =>
     state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup);
-  state.selectedTemplates = new Set(visible.map((template) => template.number));
+  visible.forEach((template) => state.selectedTemplates.add(template.number));
+  renderGenerator();
+};
+$("#generate-clear-template-group").onclick = () => {
+  const visibleNumbers = new Set(state.data.templates
+    .filter((template) => state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup)
+    .map((template) => template.number));
+  state.selectedTemplates = new Set([...state.selectedTemplates].filter((number) => !visibleNumbers.has(number)));
   renderGenerator();
 };
 $("#generation-mode").onchange = updateSummary;
