@@ -63,7 +63,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
-    headers: options.body ? { "content-type": "application/json" } : undefined,
+    headers: options.body ? { "content-type": "application/json; charset=utf-8" } : undefined,
     ...options,
   });
   const payload = await response.json();
@@ -650,7 +650,7 @@ function renderTemplates() {
   $("#rename-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
   $("#delete-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
   $("#template-grid").innerHTML = templates.map((template) => `
-    <article class="template-card ${state.selectedTemplateCards.has(template.number) ? "selected" : ""}">
+    <article class="template-card ${state.selectedTemplateCards.has(template.number) ? "selected" : ""}" data-template-card="${template.number}" role="checkbox" aria-checked="${state.selectedTemplateCards.has(template.number)}" tabindex="0">
       <input class="card-check" type="checkbox" data-select-template-card="${template.number}" ${state.selectedTemplateCards.has(template.number) ? "checked" : ""}>
       <div class="template-preview">${wireframe(template)}</div>
       <div class="template-info">
@@ -663,9 +663,27 @@ function renderTemplates() {
       <div class="template-actions"><button class="text-btn" data-toggle-template="${template.number}">${template.enabled ? "停用" : "启用"}</button><button class="btn small" data-edit-template="${template.number}">编辑与预览</button></div>
     </article>
   `).join("") || `<div class="summary-note">该分组还没有模板。</div>`;
-  $$("[data-select-template-card]").forEach((input) => input.onchange = () => {
-    input.checked ? state.selectedTemplateCards.add(input.dataset.selectTemplateCard) : state.selectedTemplateCards.delete(input.dataset.selectTemplateCard);
+  const setTemplateCardSelected = (number, selected) => {
+    selected ? state.selectedTemplateCards.add(number) : state.selectedTemplateCards.delete(number);
     renderTemplates();
+  };
+  $$("[data-select-template-card]").forEach((input) => input.onchange = () => {
+    setTemplateCardSelected(input.dataset.selectTemplateCard, input.checked);
+  });
+  $$("[data-template-card]").forEach((card) => {
+    const toggleCard = () => {
+      const number = card.dataset.templateCard;
+      setTemplateCardSelected(number, !state.selectedTemplateCards.has(number));
+    };
+    card.onclick = (event) => {
+      if (event.target.closest("button, input, select, textarea, a")) return;
+      toggleCard();
+    };
+    card.onkeydown = (event) => {
+      if (!["Enter", " "].includes(event.key) || event.target.closest("button, input, select, textarea, a")) return;
+      event.preventDefault();
+      toggleCard();
+    };
   });
   $$("[data-edit-template]").forEach((button) => button.onclick = () => openTemplate(button.dataset.editTemplate));
   $$("[data-toggle-template]").forEach((button) => button.onclick = async () => {

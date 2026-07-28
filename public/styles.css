@@ -68,7 +68,7 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .product-card.selected { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(242,106,33,.14); }
 .product-thumb { position: relative; z-index: 1; height: 178px; overflow: hidden; background: linear-gradient(145deg, #f4eee5, #fff); display: grid; place-items: center; padding: 14px; }
 .product-thumb img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 10px 14px rgba(60,40,20,.12)); }
-.card-check { position: absolute; top: 12px; left: 12px; z-index: 4; width: 20px; height: 20px; accent-color: var(--orange); }
+.card-check { position: absolute; top: 12px; left: 12px; z-index: 20; width: 20px; height: 20px; accent-color: var(--orange); pointer-events: auto; cursor: pointer; }
 .category-badge { position: absolute; top: 12px; right: 12px; z-index: 4; background: rgba(37,33,31,.82); color: white; border-radius: 99px; padding: 5px 8px; font-size: 10px; backdrop-filter: blur(8px); }
 .product-body { position: relative; z-index: 3; padding: 14px; background: var(--card); }
 .product-body h3 { margin: 0 0 8px; font-size: 16px; }
@@ -171,7 +171,9 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .template-selection-bar { margin-top: -8px; }
 .template-selection-bar select { min-width: 150px; margin-left: auto; border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; background: white; }
 .template-selection-bar .btn { margin-left: 0; }
-.template-card { position: relative; }
+.template-card { position: relative; cursor: pointer; }
+.template-card button, .template-card input { cursor: pointer; }
+.template-card:focus-visible { outline: 3px solid rgba(242,106,33,.35); outline-offset: 2px; }
 .template-card.selected { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(242,106,33,.14); }
 .template-group-badge { display: inline-flex; margin-bottom: 8px; padding: 4px 8px; border-radius: 99px; color: #8d4a22; background: #fff0e5; font-size: 9px; font-weight: 800; }
 .template-info p { color: var(--muted); font-size: 11px; line-height: 1.65; min-height: 54px; }

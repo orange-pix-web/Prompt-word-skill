@@ -80,6 +80,11 @@ async function backupFile(file, label) {
   await fs.copyFile(file, path.join(BACKUP_ROOT, `${stamp}-${label}.bak`));
 }
 
+function hasSuspectedEncodingDamage(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return /\?{3,}/.test(text || "");
+}
+
 async function readRecycleBin() {
   const entries = await readJson(RECYCLE_FILE, []);
   const now = Date.now();
@@ -281,11 +286,17 @@ async function apiSaveTemplates(body) {
     if (!/^\d{2}$/.test(template.number)) throw new Error("模板编号必须是两位数字");
     if (numbers.has(template.number)) throw new Error(`模板编号重复：${template.number}`);
     numbers.add(template.number);
+    if (hasSuspectedEncodingDamage(template)) {
+      throw new Error(`模板${template.number}中检测到连续问号，可能发生中文编码损坏，已停止保存。请刷新数据后重试`);
+    }
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
     if (String(template.group || "").trim() === "全部") throw new Error("“全部”是筛选项，不能作为模板分组名称");
   }
   if (Array.isArray(body.groups) && body.groups.some((group) => String(group).trim() === "全部")) {
     throw new Error("“全部”是筛选项，不能作为模板分组名称");
+  }
+  if (hasSuspectedEncodingDamage(body.groups || [])) {
+    throw new Error("模板分组中检测到连续问号，可能发生中文编码损坏，已停止保存");
   }
   await backupFile(TEMPLATE_FILE, "主图模板配置.md");
   await backupFile(LAYOUT_FILE, "template-layouts.json");
