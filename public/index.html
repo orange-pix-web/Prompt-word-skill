@@ -22,6 +22,7 @@
         <button class="nav-item" data-view="marketing"><span>✎</span>营销文案</button>
         <button class="nav-item" data-view="templates"><span>◇</span>模板中心</button>
         <button class="nav-item" data-view="generate"><span>✦</span>提示词生成</button>
+        <button class="nav-item" data-view="prompts"><span>▤</span>提示词管理</button>
         <button class="nav-item" data-view="references"><span>◎</span>参考图分析</button>
         <button class="nav-item" data-view="recycle"><span>♲</span>回收站</button>
       </nav>
@@ -126,21 +127,21 @@
 
       <section class="view" id="view-generate">
         <div class="generator-layout">
-          <div class="panel">
+          <div class="panel generator-product-panel">
             <div class="panel-head"><div><span class="step">01</span><h2>选择产品</h2></div><button class="text-btn" id="generate-select-products">全选</button></div>
             <div class="compact-search"><input id="generate-product-search" placeholder="筛选产品"></div>
             <div class="check-list" id="generate-products"></div>
           </div>
-          <div class="panel">
+          <div class="panel generator-template-panel">
             <div class="panel-head"><div><span class="step">02</span><h2>选择模板</h2></div><button class="text-btn" id="generate-select-templates">选择当前分组已启用</button></div>
             <div class="generator-template-filter">
               <label>模板分组<select id="generate-template-group"></select></label>
               <button type="button" class="btn ghost small" id="generate-select-template-group">仅选当前分组全部</button>
               <span id="generate-template-group-count"></span>
             </div>
-            <div class="check-list template-check-list" id="generate-templates"></div>
+            <div class="generator-template-strip" id="generate-templates"></div>
           </div>
-          <div class="panel summary-panel">
+          <div class="panel summary-panel generator-summary-panel">
             <div class="panel-head"><div><span class="step">03</span><h2>确认生成</h2></div></div>
             <div class="generation-summary">
               <div><strong id="summary-products">0</strong><span>产品</span></div>
@@ -174,8 +175,22 @@
             </div>
             <button class="btn primary large" id="generate-btn">生成所选提示词</button>
             <div class="result-box" id="generation-result">等待选择产品和模板</div>
+            <div class="generated-folder-actions hidden" id="generated-folder-actions"></div>
           </div>
         </div>
+      </section>
+
+      <section class="view" id="view-prompts">
+        <div class="section-head">
+          <div><h2>提示词管理</h2><p>统一查看产品目录和历史目录中的提示词版本，可预览内容或直接在资源管理器中定位文件。</p></div>
+          <button class="btn ghost" id="open-prompt-root">打开提示词项目目录</button>
+        </div>
+        <div class="metric-grid prompt-metrics" id="prompt-metrics"></div>
+        <div class="toolbar">
+          <div class="search-wrap"><span>⌕</span><input id="prompt-search" placeholder="搜索产品或提示词文件"></div>
+          <div class="filter-chips" id="prompt-category-filters"></div>
+        </div>
+        <div class="prompt-management-grid" id="prompt-management-grid"></div>
       </section>
 
       <section class="view" id="view-references">

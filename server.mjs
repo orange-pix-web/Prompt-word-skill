@@ -73,6 +73,26 @@ async function saveMeta(meta) {
   await fs.writeFile(META_FILE, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
 
+function promptVersionFromName(fileName) {
+  const match = /-生图提示词(?:-v(\d+))?\.md$/i.exec(fileName);
+  return match ? Number(match[1] || 1) : null;
+}
+
+async function collectMarkdownFiles(root) {
+  if (!fsSync.existsSync(root)) return [];
+  const collected = [];
+  async function walk(folder) {
+    const entries = await fs.readdir(folder, { withFileTypes: true });
+    for (const entry of entries) {
+      const target = path.join(folder, entry.name);
+      if (entry.isDirectory()) await walk(target);
+      else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".md") collected.push(target);
+    }
+  }
+  await walk(root);
+  return collected;
+}
+
 async function backupFile(file, label) {
   if (!fsSync.existsSync(file)) return;
   await fs.mkdir(BACKUP_ROOT, { recursive: true });
@@ -155,6 +175,7 @@ async function loadState() {
       };
     }));
   const products = [];
+  const prompts = [];
   for (const categoryEntry of categoryEntries) {
     const categoryPath = path.join(PRODUCT_ROOT, categoryEntry.name);
     const files = await fs.readdir(categoryPath);
@@ -162,6 +183,25 @@ async function loadState() {
       const name = path.basename(imageName, path.extname(imageName)).trim();
       const stats = await fs.stat(path.join(categoryPath, imageName));
       const latest = latestPromptVersion(files, name);
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const promptPattern = new RegExp(`^${escapedName}-生图提示词(?:-v(\\d+))?\\.md$`, "i");
+      const promptFiles = files.filter((file) => promptPattern.test(file));
+      for (const promptFile of promptFiles) {
+        const promptPath = path.join(categoryPath, promptFile);
+        const promptStats = await fs.stat(promptPath);
+        const match = promptPattern.exec(promptFile);
+        prompts.push({
+          fileName: promptFile,
+          productName: name,
+          category: categoryEntry.name,
+          version: Number(match?.[1] || 1),
+          latest: latest?.name === promptFile,
+          relativePath: path.relative(DATA_ROOT, promptPath).replaceAll("\\", "/"),
+          size: promptStats.size,
+          modifiedAt: promptStats.mtime.toISOString(),
+          source: "产品目录",
+        });
+      }
       const fact = meta.products[name] || facts.get(name) || { net: "待填写", form: "other", tags: [] };
       products.push({
         name,
@@ -177,11 +217,36 @@ async function loadState() {
       });
     }
   }
+  const knownPromptPaths = new Set(prompts.map((item) => item.relativePath));
+  const historyRoot = path.join(DATA_ROOT, "生图提示词");
+  for (const promptPath of await collectMarkdownFiles(historyRoot)) {
+    const relativePath = path.relative(DATA_ROOT, promptPath).replaceAll("\\", "/");
+    if (knownPromptPaths.has(relativePath)) continue;
+    const promptStats = await fs.stat(promptPath);
+    const fileName = path.basename(promptPath);
+    const productName = fileName
+      .replace(/-组合主图提示词-\d+\.md$/i, "")
+      .replace(/-生图提示词(?:-v\d+)?\.md$/i, "");
+    prompts.push({
+      fileName,
+      productName,
+      category: path.relative(historyRoot, path.dirname(promptPath)).split(path.sep)[0] || "历史目录",
+      version: promptVersionFromName(fileName),
+      latest: false,
+      relativePath,
+      size: promptStats.size,
+      modifiedAt: promptStats.mtime.toISOString(),
+      source: "历史目录",
+    });
+  }
   products.sort((a, b) => a.category.localeCompare(b.category, "zh-CN") || a.name.localeCompare(b.name, "zh-CN"));
+  prompts.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt)
+    || a.productName.localeCompare(b.productName, "zh-CN"));
   return {
     dataRoot: DATA_ROOT,
     categories: categoryEntries.map((entry) => entry.name).sort((a, b) => a.localeCompare(b, "zh-CN")),
     products,
+    prompts,
     templates,
     templateGroups: templateGroupList,
     productStyles,
@@ -486,6 +551,17 @@ async function apiGeneratePrompts(body) {
   return { ok: true, generated };
 }
 
+async function apiOpenFolder(body) {
+  const relativePath = String(body.path || "").trim();
+  const target = safeChildPath(DATA_ROOT, relativePath);
+  const stats = await fs.stat(target);
+  if (process.platform !== "win32") throw new Error("当前系统暂不支持从工作台打开文件夹");
+  const args = stats.isDirectory() ? [target] : ["/select,", target];
+  const child = spawn("explorer.exe", args, { detached: true, stdio: "ignore", windowsHide: false });
+  child.unref();
+  return { ok: true };
+}
+
 async function apiImportReference(body) {
   const extension = path.extname(body.fileName || "").toLowerCase();
   if (!IMAGE_EXTENSIONS.has(extension)) throw new Error("参考图格式不支持");
@@ -582,6 +658,7 @@ const server = http.createServer(async (request, response) => {
         "/api/recycle/restore": apiRestoreRecycle,
         "/api/recycle/purge": apiPurgeRecycle,
         "/api/prompts/generate": apiGeneratePrompts,
+        "/api/system/open-folder": apiOpenFolder,
         "/api/references/import": apiImportReference,
         "/api/templates/import-json": apiImportTemplateJson,
       };

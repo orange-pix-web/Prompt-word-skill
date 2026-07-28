@@ -184,8 +184,13 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .text-btn { border: 0; background: transparent; color: var(--orange-dark); font-size: 11px; font-weight: 700; }
 .enabled-pill { font-size: 10px; padding: 5px 8px; border-radius: 99px; background: #e6f5ec; color: #24744a; }
 .enabled-pill.off { background: #eeeae6; color: #817973; }
-.generator-layout { display: grid; grid-template-columns: 1fr 1fr .85fr; gap: 16px; align-items: start; }
+.generator-layout { display: grid; grid-template-columns: minmax(300px,.72fr) minmax(390px,1.28fr); grid-template-areas: "products summary" "templates templates"; gap: 16px; align-items: start; }
+.generator-product-panel { grid-area: products; min-height: 480px; }
+.generator-summary-panel { grid-area: summary; }
+.generator-template-panel { grid-area: templates; min-height: 0; }
 .panel { min-height: 610px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 17px; box-shadow: var(--shadow); }
+.panel.generator-product-panel { min-height: 480px; }
+.panel.generator-template-panel { min-height: 0; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
 .panel-head > div { display: flex; align-items: center; gap: 9px; }
 .panel-head h2 { font-size: 16px; margin: 0; }
@@ -193,6 +198,17 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .generator-template-filter label { font-size: 9px; color: var(--muted); }
 .generator-template-filter select { margin-top: 4px; padding: 7px 8px; background: white; }
 .generator-template-filter span { grid-column: 1/-1; color: var(--muted); font-size: 9px; }
+.generator-template-strip { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x proximity; scrollbar-color: #c8b9ab transparent; }
+.generator-template-card { position: relative; flex: 0 0 215px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: white; scroll-snap-align: start; cursor: pointer; transition: .18s ease; }
+.generator-template-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(56,39,27,.1); }
+.generator-template-card.selected { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(242,106,33,.14); }
+.generator-template-card > input { position: absolute; opacity: 0; pointer-events: none; }
+.generator-template-check { position: absolute; z-index: 20; top: 9px; left: 9px; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.9); border-radius: 7px; color: transparent; background: rgba(255,255,255,.9); box-shadow: 0 4px 12px rgba(30,22,18,.15); font-weight: 900; }
+.generator-template-card.selected .generator-template-check { color: white; border-color: var(--orange); background: var(--orange); }
+.generator-template-preview { position: relative; aspect-ratio: 1; overflow: hidden; background: #eef4f7; }
+.generator-template-info { display: block; padding: 11px 12px 12px; }
+.generator-template-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.generator-template-info small { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 9px; }
 .step { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 9px; background: #fff0e6; color: var(--orange); font-size: 10px; font-weight: 900; }
 .compact-search { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; }
 .check-list { max-height: 520px; overflow: auto; display: grid; gap: 6px; padding-right: 3px; }
@@ -204,6 +220,7 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .check-row small { display: block; color: var(--muted); margin-top: 3px; }
 .template-check-list .check-row { border-color: var(--line); }
 .summary-panel { min-height: 0; position: sticky; top: 24px; }
+.summary-panel.generator-summary-panel { position: static; top: auto; }
 .generation-summary { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 28px 5px; }
 .generation-summary div { text-align: center; }
 .generation-summary strong { display: block; font-size: 31px; }
@@ -212,6 +229,20 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .generation-summary .accent strong { color: var(--orange); }
 .summary-note, .result-box { color: var(--muted); font-size: 11px; line-height: 1.7; padding: 12px; background: #f7f1ea; border-radius: 10px; margin-bottom: 12px; }
 .result-box { margin: 12px 0 0; max-height: 150px; overflow: auto; }
+.generated-folder-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+.generated-folder-actions .btn { flex: 1 1 210px; }
+.prompt-management-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(440px,1fr)); gap: 12px; }
+.prompt-file-card { display: grid; grid-template-columns: 54px minmax(0,1fr) auto; gap: 13px; align-items: center; min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); box-shadow: 0 10px 30px rgba(56,39,27,.05); }
+.prompt-file-icon { width: 50px; height: 58px; display: grid; place-items: center; border-radius: 9px 9px 13px 9px; color: white; background: linear-gradient(145deg,#ff873d,#e95011); font-size: 11px; font-weight: 900; box-shadow: 0 8px 18px rgba(242,106,33,.22); }
+.prompt-file-main { min-width: 0; }
+.prompt-file-heading { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.prompt-file-heading h3 { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.prompt-file-heading span { color: var(--orange-dark); font-size: 9px; font-weight: 800; }
+.prompt-file-heading b { flex: 0 0 auto; padding: 4px 7px; border-radius: 99px; color: #24744a; background: #e6f5ec; font-size: 9px; }
+.prompt-file-heading b.muted { color: #746c66; background: #eeeae6; }
+.prompt-file-main > p { margin: 7px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
+.prompt-file-meta { display: flex; gap: 10px; flex-wrap: wrap; color: #968b83; font-size: 9px; }
+.prompt-file-actions { display: grid; gap: 6px; }
 .reference-hero { display: flex; justify-content: space-between; align-items: center; border-radius: 20px; background: #24201e; color: white; padding: 28px 30px; margin-bottom: 18px; }
 .reference-hero p { max-width: 650px; margin-bottom: 0; color: #beb5af; }
 .ai-state { border: 1px solid rgba(255,255,255,.18); border-radius: 99px; padding: 9px 12px; font-size: 10px; color: #ddd4ce; }
@@ -413,14 +444,14 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
 .toast.error { background: #a63026; }
 @media (max-width: 1050px) {
   .generator-layout { grid-template-columns: 1fr 1fr; }
-  .summary-panel { grid-column: 1/-1; position: static; }
+  .summary-panel { position: static; }
   .metric-grid { grid-template-columns: repeat(2,1fr); }
 }
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; padding: 14px; }
   .brand { padding-bottom: 12px; }
-  nav { grid-template-columns: repeat(6,1fr); }
+  nav { grid-template-columns: repeat(7,1fr); }
   .nav-item { justify-content: center; font-size: 0; }
   .nav-item span { font-size: 18px; }
   .sidebar-foot { display: none; }
@@ -428,6 +459,12 @@ dialog::backdrop { background: rgba(27,22,19,.55); backdrop-filter: blur(4px); }
   .topbar, .toolbar, .section-head { align-items: stretch; flex-direction: column; }
   .top-actions, .search-wrap { width: 100%; }
   .metric-grid, .generator-layout, .reference-workspace, .template-editor, .detail-layout, .json-import-fields, .json-guide-grid { grid-template-columns: 1fr; }
+  .generator-layout { grid-template-areas: "products" "summary" "templates"; }
+  .generator-template-card { flex-basis: 178px; }
+  .prompt-management-grid { grid-template-columns: 1fr; }
+  .prompt-file-card { grid-template-columns: 46px minmax(0,1fr); }
+  .prompt-file-icon { width: 44px; height: 52px; }
+  .prompt-file-actions { grid-column: 1/-1; grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .wide { grid-column: auto; }
   .preview-context, .marketing-toolbar, .marketing-form { grid-template-columns: 1fr; }

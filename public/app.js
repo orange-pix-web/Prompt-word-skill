@@ -9,6 +9,9 @@ const state = {
   selectedMarketingCopyKeys: new Set(),
   templateGroup: "全部",
   generateTemplateGroup: "全部",
+  promptCategory: "全部",
+  promptSearch: "",
+  lastGeneratedPaths: [],
   marketingScope: "product",
   marketingCategory: "全部",
   marketingProduct: null,
@@ -62,7 +65,7 @@ const JSON_ANALYSIS_PROMPT = `请分析我上传的中文电商主图参考图�
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const VIEW_STORAGE_KEY = "prompt-studio:active-view";
-const VALID_VIEWS = new Set(["products", "marketing", "templates", "generate", "references", "recycle"]);
+const VALID_VIEWS = new Set(["products", "marketing", "templates", "generate", "prompts", "references", "recycle"]);
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -118,6 +121,13 @@ function formatSize(bytes) {
   return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
 
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "时间未知" : new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
 const MARKETING_REGIONS = ["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"];
 
 function entryRegions(entry = {}) {
@@ -149,6 +159,7 @@ function renderAll() {
   renderProducts();
   renderTemplates();
   renderGenerator();
+  renderPromptManager();
   fillCategorySelects();
   renderMarketingNavigation();
   renderRecycleBin();
@@ -724,7 +735,15 @@ function renderGenerator() {
     <label class="check-row"><input type="checkbox" data-g-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
   `).join("");
   $("#generate-templates").innerHTML = visibleTemplates.map((template) => `
-    <label class="check-row"><input type="checkbox" data-g-template="${template.number}" ${state.selectedTemplates.has(template.number) ? "checked" : ""}><span><strong>${template.number} · ${template.name}</strong><small>${template.group || "未分组"} · ${template.points}条卖点 · ${template.bottomStyle}</small></span></label>
+    <label class="generator-template-card ${state.selectedTemplates.has(template.number) ? "selected" : ""}">
+      <input type="checkbox" data-g-template="${template.number}" ${state.selectedTemplates.has(template.number) ? "checked" : ""}>
+      <span class="generator-template-check">✓</span>
+      <div class="generator-template-preview">${wireframe(template)}</div>
+      <span class="generator-template-info">
+        <strong>${template.number} · ${template.name}</strong>
+        <small>${template.group || "未分组"} · ${template.points}条卖点 · ${template.enabled ? "已启用" : "已停用"}</small>
+      </span>
+    </label>
   `).join("");
   $$("[data-g-product]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedProducts.add(input.dataset.gProduct) : state.selectedProducts.delete(input.dataset.gProduct);
@@ -733,10 +752,91 @@ function renderGenerator() {
   });
   $$("[data-g-template]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedTemplates.add(input.dataset.gTemplate) : state.selectedTemplates.delete(input.dataset.gTemplate);
+    input.closest(".generator-template-card")?.classList.toggle("selected", input.checked);
     updateSummary();
   });
   renderGenerationMarketingCopies();
   updateSummary();
+}
+
+function filteredPrompts() {
+  const keyword = state.promptSearch.trim().toLowerCase();
+  return (state.data.prompts || []).filter((promptFile) =>
+    (state.promptCategory === "全部" || promptFile.category === state.promptCategory) &&
+    (!keyword || promptFile.productName.toLowerCase().includes(keyword) || promptFile.fileName.toLowerCase().includes(keyword))
+  );
+}
+
+async function openFolder(relativePath) {
+  await api("/api/system/open-folder", {
+    method: "POST",
+    body: JSON.stringify({ path: relativePath }),
+  });
+}
+
+function renderPromptManager() {
+  const prompts = state.data.prompts || [];
+  const latestCount = prompts.filter((item) => item.latest).length;
+  const productsWithPrompts = new Set(prompts.map((item) => item.productName)).size;
+  const historyCount = prompts.filter((item) => item.source === "历史目录").length;
+  $("#prompt-metrics").innerHTML = [
+    ["提示词文件", prompts.length, "份"],
+    ["涉及产品", productsWithPrompts, "个"],
+    ["产品最新版本", latestCount, "份"],
+    ["历史目录", historyCount, "份"],
+  ].map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}<em>${unit}</em></strong></div>`).join("");
+  const categories = ["全部", ...new Set(prompts.map((item) => item.category).filter(Boolean))];
+  if (!categories.includes(state.promptCategory)) state.promptCategory = "全部";
+  $("#prompt-category-filters").innerHTML = categories.map((category) =>
+    `<button class="chip ${category === state.promptCategory ? "active" : ""}" data-prompt-category="${category}">${category}</button>`
+  ).join("");
+  $$("[data-prompt-category]").forEach((button) => button.onclick = () => {
+    state.promptCategory = button.dataset.promptCategory;
+    renderPromptManager();
+  });
+  const visible = filteredPrompts();
+  $("#prompt-management-grid").innerHTML = visible.map((promptFile) => `
+    <article class="prompt-file-card">
+      <div class="prompt-file-icon">MD</div>
+      <div class="prompt-file-main">
+        <div class="prompt-file-heading">
+          <div><span>${promptFile.category}</span><h3>${promptFile.productName}</h3></div>
+          ${promptFile.latest ? `<b>最新版本</b>` : promptFile.version ? `<b class="muted">v${promptFile.version}</b>` : `<b class="muted">历史</b>`}
+        </div>
+        <p title="${promptFile.fileName}">${promptFile.fileName}</p>
+        <div class="prompt-file-meta"><span>${promptFile.source}</span><span>${formatSize(promptFile.size)}</span><span>${formatDate(promptFile.modifiedAt)}</span></div>
+      </div>
+      <div class="prompt-file-actions">
+        <button class="btn ghost small" data-preview-prompt="${promptFile.relativePath}">查看内容</button>
+        <button class="btn small" data-open-prompt-folder="${promptFile.relativePath}">打开文件夹</button>
+      </div>
+    </article>
+  `).join("") || `<div class="summary-note">没有符合条件的提示词文件。</div>`;
+  $$("[data-preview-prompt]").forEach((button) => button.onclick = () =>
+    window.open(media(button.dataset.previewPrompt), "_blank", "noopener"));
+  $$("[data-open-prompt-folder]").forEach((button) => button.onclick = async () => {
+    try {
+      await openFolder(button.dataset.openPromptFolder);
+      toast("已在资源管理器中定位提示词");
+    } catch (error) { toast(error.message, true); }
+  });
+}
+
+function renderGeneratedFolderActions() {
+  const container = $("#generated-folder-actions");
+  const paths = [...new Set(state.lastGeneratedPaths || [])];
+  container.classList.toggle("hidden", !paths.length);
+  container.innerHTML = paths.map((relativePath, index) => `
+    <button type="button" class="btn ghost small" data-open-generated-folder="${relativePath}">
+      ${paths.length === 1 ? "打开生成文件所在文件夹" : `打开第${index + 1}个文件所在文件夹`}
+    </button>
+  `).join("");
+  $$("[data-open-generated-folder]").forEach((button) => button.onclick = async () => {
+    try {
+      await openFolder(button.dataset.openGeneratedFolder);
+      toast("已在资源管理器中定位生成文件");
+    } catch (error) { toast(error.message, true); }
+  });
 }
 
 function selectedMarketingSources() {
@@ -804,8 +904,9 @@ function fillCategorySelects() {
 function switchView(view) {
   if (!VALID_VIEWS.has(view)) view = "products";
   state.view = view;
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
-  const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", references: "参考图分析", recycle: "回收站" };
+  const labels = { products: "产品管理", marketing: "营销文案", templates: "模板中心", generate: "提示词生成", prompts: "提示词管理", references: "参考图分析", recycle: "回收站" };
   $("#page-title").textContent = labels[view];
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `view-${view}`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -1192,6 +1293,13 @@ $("#purge-recycle-all").onclick = async () => {
 };
 $("#refresh-btn").onclick = async () => { await reload(); toast("数据已刷新"); };
 $("#product-search").oninput = (event) => { state.search = event.target.value; renderProducts(); };
+$("#prompt-search").oninput = (event) => { state.promptSearch = event.target.value; renderPromptManager(); };
+$("#open-prompt-root").onclick = async () => {
+  try {
+    await openFolder("");
+    toast("已打开项目目录");
+  } catch (error) { toast(error.message, true); }
+};
 $("#select-all-products").onchange = (event) => {
   for (const product of filteredProducts()) event.target.checked ? state.selectedProducts.add(product.name) : state.selectedProducts.delete(product.name);
   renderProducts(); renderGenerator();
@@ -1437,6 +1545,8 @@ $("#marketing-selection-mode").onchange = renderGenerationMarketingCopies;
 $("#generate-btn").onclick = async () => {
   try {
     $("#generation-result").textContent = "正在生成…";
+    state.lastGeneratedPaths = [];
+    renderGeneratedFolderActions();
     const result = await api("/api/prompts/generate", { method: "POST", body: JSON.stringify({
       products: [...state.selectedProducts],
       templates: [...state.selectedTemplates],
@@ -1446,6 +1556,8 @@ $("#generate-btn").onclick = async () => {
       marketingCopyKeys: [...state.selectedMarketingCopyKeys],
     }) });
     $("#generation-result").textContent = `已生成 ${result.generated.length} 份文件\n${result.generated.join("\n")}`;
+    state.lastGeneratedPaths = result.generated;
+    renderGeneratedFolderActions();
     await reload(); toast("提示词生成完成");
   } catch (error) { $("#generation-result").textContent = error.message; toast(error.message, true); }
 };
