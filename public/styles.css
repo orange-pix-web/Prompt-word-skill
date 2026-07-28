@@ -171,6 +171,7 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .template-selection-bar { margin-top: -8px; }
 .template-selection-bar select { min-width: 150px; margin-left: auto; border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; background: white; }
 .template-selection-bar .btn { margin-left: 0; }
+.template-batch-actions { display: flex; gap: 7px; }
 .template-card { position: relative; cursor: pointer; }
 .template-card button, .template-card input { cursor: pointer; }
 .template-card:focus-visible { outline: 3px solid rgba(242,106,33,.35); outline-offset: 2px; }
@@ -188,6 +189,10 @@ h2 { margin-bottom: 6px; letter-spacing: -.03em; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
 .panel-head > div { display: flex; align-items: center; gap: 9px; }
 .panel-head h2 { font-size: 16px; margin: 0; }
+.generator-template-filter { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 10px; padding: 10px; border-radius: 10px; background: #f7f1ea; }
+.generator-template-filter label { font-size: 9px; color: var(--muted); }
+.generator-template-filter select { margin-top: 4px; padding: 7px 8px; background: white; }
+.generator-template-filter span { grid-column: 1/-1; color: var(--muted); font-size: 9px; }
 .step { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 9px; background: #fff0e6; color: var(--orange); font-size: 10px; font-weight: 900; }
 .compact-search { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; }
 .check-list { max-height: 520px; overflow: auto; display: grid; gap: 6px; padding-right: 3px; }

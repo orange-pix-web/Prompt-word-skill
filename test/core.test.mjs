@@ -69,6 +69,26 @@ test("同一营销文案可绑定多个位置但单张图只使用一次", () =>
   assert.deepEqual(copy.points, ["腺肌胃炎", "品质保障"]);
 });
 
+test("不同模板会轮换产品专属营销词，避免整批图片文案完全相同", () => {
+  const entries = ["环境消毒", "圈舍消毒", "养殖场消毒", "带畜消毒", "安全可靠"]
+    .map((text, index) => ({
+      scope: "product", category: "消毒", product: "消毒粉",
+      regions: ["侧栏卖点"], text, priority: 100 - index, enabled: true,
+    }));
+  const template = (number) => ({
+    number, points: 3, visualLayout: { elements: {
+      point1: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 20 },
+      point2: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 30 },
+      point3: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 40 },
+    } },
+  });
+  const first = resolveProductMarketing(entries, { name: "消毒粉", category: "消毒" }, template("11"));
+  const second = resolveProductMarketing(entries, { name: "消毒粉", category: "消毒" }, template("12"));
+  assert.notDeepEqual(first.points, second.points);
+  assert.equal(new Set(first.points).size, first.points.length);
+  assert.equal(new Set(second.points).size, second.points.length);
+});
+
 test("生成时可限制营销文案来源或只使用勾选文案", () => {
   const entries = [
     { scope: "product", category: "鸡鸭鹅禽类", product: "腺肌胃康宁", regions: ["侧栏卖点"], text: "产品专属词" },

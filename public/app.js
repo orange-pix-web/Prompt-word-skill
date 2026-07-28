@@ -8,6 +8,7 @@ const state = {
   selectedTemplateCards: new Set(),
   selectedMarketingCopyKeys: new Set(),
   templateGroup: "全部",
+  generateTemplateGroup: "全部",
   marketingScope: "product",
   marketingCategory: "全部",
   marketingProduct: null,
@@ -655,6 +656,9 @@ function renderTemplates() {
   $("#move-template-group").innerHTML = groups.filter((group) => group !== "全部")
     .map((group) => `<option value="${group}">${group}</option>`).join("");
   $("#selected-template-card-count").textContent = `已选 ${state.selectedTemplateCards.size} 个模板`;
+  const selectedTemplates = state.data.templates.filter((template) => state.selectedTemplateCards.has(template.number));
+  $("#batch-enable-templates").disabled = !selectedTemplates.some((template) => !template.enabled);
+  $("#batch-disable-templates").disabled = !selectedTemplates.some((template) => template.enabled);
   $("#rename-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
   $("#delete-template-group").disabled = ["全部", "未分组"].includes(state.templateGroup);
   $("#template-grid").innerHTML = templates.map((template) => `
@@ -704,10 +708,22 @@ function renderTemplates() {
 function renderGenerator() {
   const search = ($("#generate-product-search")?.value || "").toLowerCase();
   const products = state.data.products.filter((item) => !search || item.name.toLowerCase().includes(search));
+  const templateGroups = ["全部", ...new Set([
+    ...(state.data.templateGroups || ["未分组"]),
+    ...state.data.templates.map((template) => template.group || "未分组"),
+  ])];
+  if (!templateGroups.includes(state.generateTemplateGroup)) state.generateTemplateGroup = "全部";
+  $("#generate-template-group").innerHTML = templateGroups
+    .map((group) => `<option value="${group}">${group}</option>`).join("");
+  $("#generate-template-group").value = state.generateTemplateGroup;
+  const visibleTemplates = state.data.templates.filter((template) =>
+    state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup
+  );
+  $("#generate-template-group-count").textContent = `当前显示 ${visibleTemplates.length} 个模板`;
   $("#generate-products").innerHTML = products.map((product) => `
     <label class="check-row"><input type="checkbox" data-g-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
   `).join("");
-  $("#generate-templates").innerHTML = state.data.templates.map((template) => `
+  $("#generate-templates").innerHTML = visibleTemplates.map((template) => `
     <label class="check-row"><input type="checkbox" data-g-template="${template.number}" ${state.selectedTemplates.has(template.number) ? "checked" : ""}><span><strong>${template.number} · ${template.name}</strong><small>${template.group || "未分组"} · ${template.points}条卖点 · ${template.bottomStyle}</small></span></label>
   `).join("");
   $$("[data-g-product]").forEach((input) => input.onchange = () => {
@@ -1282,6 +1298,23 @@ $("#apply-template-group").onclick = async () => {
   state.selectedTemplateCards.clear();
   try { await saveTemplates(); toast(`所选模板已移动到【${group}】`); } catch (error) { toast(error.message, true); }
 };
+async function setSelectedTemplatesEnabled(enabled) {
+  const targets = state.data.templates.filter((template) =>
+    state.selectedTemplateCards.has(template.number) && template.enabled !== enabled);
+  if (!targets.length) return toast(enabled ? "所选模板均已启用" : "所选模板均已停用");
+  const previous = new Map(targets.map((template) => [template.number, template.enabled]));
+  targets.forEach((template) => { template.enabled = enabled; });
+  try {
+    await saveTemplates();
+    toast(`已批量${enabled ? "启用" : "停用"} ${targets.length} 个模板`);
+  } catch (error) {
+    targets.forEach((template) => { template.enabled = previous.get(template.number); });
+    renderTemplates();
+    toast(error.message, true);
+  }
+}
+$("#batch-enable-templates").onclick = () => setSelectedTemplatesEnabled(true);
+$("#batch-disable-templates").onclick = () => setSelectedTemplatesEnabled(false);
 $("#save-template-btn").onclick = async () => {
   try {
     const template = templateFromForm();
@@ -1381,8 +1414,21 @@ $("#generate-select-products").onclick = () => {
   state.selectedProducts = allSelected ? new Set() : new Set(state.data.products.map((item) => item.name));
   renderGenerator(); renderProducts();
 };
+$("#generate-template-group").onchange = (event) => {
+  state.generateTemplateGroup = event.target.value;
+  renderGenerator();
+};
 $("#generate-select-templates").onclick = () => {
-  state.selectedTemplates = new Set(state.data.templates.filter((item) => item.enabled).map((item) => item.number));
+  const visible = state.data.templates.filter((template) =>
+    (state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup)
+    && template.enabled);
+  state.selectedTemplates = new Set(visible.map((template) => template.number));
+  renderGenerator();
+};
+$("#generate-select-template-group").onclick = () => {
+  const visible = state.data.templates.filter((template) =>
+    state.generateTemplateGroup === "全部" || (template.group || "未分组") === state.generateTemplateGroup);
+  state.selectedTemplates = new Set(visible.map((template) => template.number));
   renderGenerator();
 };
 $("#generation-mode").onchange = updateSummary;
