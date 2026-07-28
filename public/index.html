@@ -89,7 +89,10 @@
       <section class="view" id="view-marketing">
         <div class="section-head">
           <div><h2>营销文案</h2><p>按具体产品、产品分类或全局范围管理营销词；模板只决定使用数量和显示位置。</p></div>
-          <button class="btn primary" id="save-marketing-page">保存营销文案</button>
+          <div class="section-head-actions">
+            <button class="btn ghost" id="open-marketing-json-import">AI营销词JSON导入</button>
+            <button class="btn primary" id="save-marketing-page">保存营销文案</button>
+          </div>
         </div>
         <div class="marketing-manager">
           <div class="toolbar marketing-card-toolbar">
@@ -110,12 +113,17 @@
               <span id="marketing-editor-count"></span>
             </div>
             <div class="marketing-binding-help">模板只决定文案数量和位置。生成时优先使用产品专属词，不足时自动补充分类通用词和全局通用词。</div>
+            <div class="marketing-group-filter">
+              <strong>文案分组</strong>
+              <div class="filter-chips" id="marketing-copy-group-filters"></div>
+            </div>
             <div class="marketing-bulk-entry">
               <label>批量添加营销文案
                 <textarea id="marketing-bulk-input" rows="5" placeholder="每行输入一条营销文案&#10;例如：&#10;科学配方&#10;品质保障&#10;厂家直发"></textarea>
               </label>
               <div>
                 <p>换行后每一行都会成为一条独立文案，添加后可为每条文案勾选多个位置属性。</p>
+                <label>统一分组<select id="marketing-bulk-group"></select></label>
                 <button type="button" class="btn primary" id="add-bulk-product-copy">按换行批量添加</button>
               </div>
             </div>
@@ -315,6 +323,51 @@
       </div>
       <div class="dialog-actions"><button type="button" class="btn ghost" data-close-template-dialog>取消</button><button type="button" class="btn primary" id="save-template-btn">保存模板</button></div>
     </form>
+  </dialog>
+
+  <dialog id="marketing-json-dialog">
+    <div class="dialog-card marketing-json-dialog-card">
+      <div class="dialog-head">
+        <div><p class="eyebrow">AI COPY IMPORT</p><h2>AI营销词JSON导入</h2></div>
+        <button type="button" class="icon-btn" id="close-marketing-json-dialog">×</button>
+      </div>
+      <div class="marketing-json-target" id="marketing-json-target"></div>
+      <div class="json-import-fields marketing-json-fields">
+        <label>导入方式
+          <select id="marketing-json-mode">
+            <option value="append">追加并跳过重复文案</option>
+            <option value="replace">替换当前范围文案</option>
+          </select>
+        </label>
+        <label class="json-file-label">选择JSON文件<input type="file" id="marketing-json-file" accept=".json,application/json"></label>
+      </div>
+      <label>粘贴AI分析JSON
+        <textarea id="marketing-json-text" rows="14" placeholder="粘贴完整JSON对象，或选择JSON文件"></textarea>
+      </label>
+      <div class="json-import-actions">
+        <button type="button" class="btn ghost" id="fill-marketing-json-example">填入示例</button>
+        <button type="button" class="btn ghost" id="validate-marketing-json">校验并预览</button>
+      </div>
+      <div class="json-import-status" id="marketing-json-status">尚未校验。导入只会带入当前编辑器，仍需点击“保存营销文案”才会写入文件。</div>
+      <div class="marketing-json-preview" id="marketing-json-preview"></div>
+      <details class="json-guide" open>
+        <summary>给豆包、ChatGPT、Tare等AI的分析提示词与标准JSON示例</summary>
+        <div class="json-guide-grid">
+          <section>
+            <div class="json-guide-head"><strong>直接复制给AI的提示词</strong><button type="button" class="text-btn" id="copy-marketing-json-prompt">复制提示词</button></div>
+            <textarea id="marketing-json-prompt" readonly></textarea>
+          </section>
+          <section>
+            <div class="json-guide-head"><strong>标准JSON示例</strong><button type="button" class="text-btn" id="copy-marketing-json-example">复制示例</button></div>
+            <pre id="marketing-json-example"></pre>
+          </section>
+        </div>
+      </details>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="cancel-marketing-json-dialog">取消</button>
+        <button type="button" class="btn primary" id="apply-marketing-json" disabled>带入营销文案编辑器</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="product-detail-dialog">

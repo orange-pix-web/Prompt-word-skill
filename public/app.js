@@ -16,6 +16,8 @@ const state = {
   marketingCategory: "全部",
   marketingProduct: null,
   marketingSearch: "",
+  marketingCopyGroup: "全部",
+  marketingImportEntries: [],
   editingTemplateNumber: null,
   editingVisualLayout: null,
   selectedLayoutElement: null,
@@ -64,6 +66,9 @@ const JSON_ANALYSIS_PROMPT = `请分析我上传的中文电商主图参考图�
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+})[character]);
 const VIEW_STORAGE_KEY = "prompt-studio:active-view";
 const VALID_VIEWS = new Set(["products", "marketing", "templates", "generate", "prompts", "references", "recycle"]);
 
@@ -129,6 +134,44 @@ function formatDate(value) {
 }
 
 const MARKETING_REGIONS = ["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"];
+const MARKETING_COPY_GROUPS = ["产品定位", "病症营销词", "使用方式", "适用对象", "使用场景", "产品特点", "规格与储存", "品质与渠道", "底栏口号", "其他"];
+
+function marketingJsonExample() {
+  const filter = currentMarketingFilter();
+  return {
+    scope: filter.scope,
+    category: filter.category || "*",
+    product: filter.product || "*",
+    items: [
+      { text: "鸡瘟鸭瘟", group: "病症营销词", regions: ["顶部卖点", "侧栏卖点"], priority: 112, enabled: true, confidence: 0.98 },
+      { text: "兑水喷雾", group: "使用方式", regions: ["侧栏卖点"], priority: 100, enabled: true, confidence: 0.96 },
+      { text: "厂家直发", group: "品质与渠道", regions: ["底栏文案"], priority: 90, enabled: true, confidence: 0.99 },
+    ],
+  };
+}
+
+function marketingJsonPrompt() {
+  const filter = currentMarketingFilter();
+  return `请分析我提供的中文电商参考图或营销文案，提取可用于产品主图的营销词，并输出可导入“生图工作台”的JSON。
+
+当前导入目标：
+- scope: ${filter.scope}
+- category: ${filter.category || "*"}
+- product: ${filter.product || "*"}
+
+要求：
+1. 只输出一个完整JSON对象，不要Markdown代码块、解释或其它文字。
+2. JSON顶层必须包含scope、category、product和items数组。
+3. 每条items必须包含text、group、regions、priority、enabled，可选confidence。
+4. text必须忠实保留参考图原文，不改写、不合并；重复文案只保留一次。
+5. group只能选择：${MARKETING_COPY_GROUPS.join("、")}。
+6. regions可多选，但只能选择：${MARKETING_REGIONS.join("、")}。
+7. 产品名称/定位用“产品定位”；疾病症状用“病症营销词”；兑水拌料等用“使用方式”；动物对象用“适用对象”；圈舍环境用“使用场景”；配方、安全、效果特点用“产品特点”；净含量、用量、储存用“规格与储存”；厂家、正品、现货、物流用“品质与渠道”；完整口号用“底栏口号”；无法判断时用“其他”。
+8. priority建议1到200，越重要数值越高；enabled固定为true；confidence使用0到1。
+9. 同一文案可以有多个regions，但只能有一个group。
+
+请严格按页面中的标准JSON示例结构输出。`;
+}
 
 function entryRegions(entry = {}) {
   const values = Array.isArray(entry.regions) && entry.regions.length
@@ -143,6 +186,8 @@ function marketingCopyKey(entry = {}) {
 async function load() {
   state.data = await api("/api/state");
   $("#data-root").textContent = state.data.dataRoot;
+  $("#marketing-bulk-group").innerHTML = MARKETING_COPY_GROUPS.map((group) => `<option>${group}</option>`).join("");
+  $("#marketing-bulk-group").value = "其他";
   for (const template of state.data.templates.filter((item) => item.enabled)) state.selectedTemplates.add(template.number);
   renderAll();
   let savedView = state.view;
@@ -202,6 +247,7 @@ function renderMarketingCategoryFilters() {
   $("#marketing-search-wrap").classList.toggle("hidden", scope !== "product");
   $$("[data-marketing-category]").forEach((button) => button.onclick = () => {
     state.marketingCategory = button.dataset.marketingCategory;
+    state.marketingCopyGroup = "全部";
     const products = marketingVisibleProducts();
     if (!products.some((item) => item.name === state.marketingProduct)) state.marketingProduct = products[0]?.name || null;
     renderMarketingNavigation();
@@ -227,6 +273,7 @@ function renderMarketingProductGrid() {
   }).join("") || `<div class="summary-note">没有符合条件的产品。</div>`;
   $$("[data-marketing-product]").forEach((card) => card.onclick = () => {
     state.marketingProduct = card.dataset.marketingProduct;
+    state.marketingCopyGroup = "全部";
     const product = state.data.products.find((item) => item.name === state.marketingProduct);
     if (product) state.marketingCategory = state.marketingCategory === "全部" ? "全部" : product.category;
     renderMarketingProductGrid();
@@ -1011,7 +1058,30 @@ function filteredProductCopies() {
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.scope === filter.scope)
     .filter(({ entry }) => filter.scope === "global" || entry.category === filter.category)
+    .filter(({ entry }) => filter.scope !== "product" || entry.product === filter.product)
+    .filter(({ entry }) => state.marketingCopyGroup === "全部" || entry.group === state.marketingCopyGroup);
+}
+
+function targetProductCopies() {
+  const filter = currentMarketingFilter();
+  return state.data.productMarketingEntries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.scope === filter.scope)
+    .filter(({ entry }) => filter.scope === "global" || entry.category === filter.category)
     .filter(({ entry }) => filter.scope !== "product" || entry.product === filter.product);
+}
+
+function renderMarketingGroupFilters() {
+  const targetItems = targetProductCopies();
+  const groups = ["全部", ...MARKETING_COPY_GROUPS];
+  $("#marketing-copy-group-filters").innerHTML = groups.map((group) => {
+    const count = group === "全部" ? targetItems.length : targetItems.filter(({ entry }) => entry.group === group).length;
+    return `<button type="button" class="chip ${state.marketingCopyGroup === group ? "active" : ""}" data-marketing-copy-group="${group}">${group}<small>${count}</small></button>`;
+  }).join("");
+  $$("[data-marketing-copy-group]").forEach((button) => button.onclick = () => {
+    state.marketingCopyGroup = button.dataset.marketingCopyGroup;
+    renderProductCopies();
+  });
 }
 
 function renderProductCopies() {
@@ -1019,6 +1089,7 @@ function renderProductCopies() {
   const editor = $("#marketing-editor-panel");
   const hasTarget = filter.scope === "global" || (filter.scope === "category" && filter.category) || (filter.scope === "product" && filter.product);
   editor.classList.toggle("hidden", !hasTarget);
+  const allItems = targetProductCopies();
   const items = filteredProductCopies();
   const title = filter.scope === "global" ? "全局通用营销词"
     : filter.scope === "category" ? `${filter.category || "未选择"} · 分类通用营销词`
@@ -1028,11 +1099,15 @@ function renderProductCopies() {
     : `点击上方产品卡片，管理该产品生成主图时优先使用的专属文案`;
   $("#marketing-editor-eyebrow").textContent = filter.scope === "global" ? "GLOBAL COPY" : filter.scope === "category" ? "CATEGORY COPY" : "PRODUCT COPY";
   $("#marketing-editor-title").textContent = title;
-  $("#marketing-editor-count").textContent = `${items.length} 条文案`;
+  $("#marketing-editor-count").textContent = state.marketingCopyGroup === "全部"
+    ? `${allItems.length} 条文案`
+    : `${items.length} / ${allItems.length} 条文案`;
+  renderMarketingGroupFilters();
   $("#product-copy-list").innerHTML = items.map(({ entry, index }) => `
     <div class="product-copy-row">
       <div class="copy-main-fields">
         <input data-copy-field="text" data-copy-index="${index}" value="${entry.text}" placeholder="输入营销词">
+        <label>文案分组<select data-copy-field="group" data-copy-index="${index}">${MARKETING_COPY_GROUPS.map((group) => `<option ${entry.group === group ? "selected" : ""}>${group}</option>`).join("")}</select></label>
         <label>优先级<input type="number" data-copy-field="priority" data-copy-index="${index}" value="${entry.priority || 0}"></label>
         <label class="copy-enabled"><input type="checkbox" data-copy-field="enabled" data-copy-index="${index}" ${entry.enabled !== false ? "checked" : ""}>启用</label>
       </div>
@@ -1121,6 +1196,7 @@ function addProductCopy() {
     product: filter.scope === "product" ? filter.product : "*",
     regions: ["侧栏卖点"],
     region: "侧栏卖点",
+    group: state.marketingCopyGroup === "全部" ? "其他" : state.marketingCopyGroup,
     text: "",
     priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
     enabled: true,
@@ -1136,7 +1212,8 @@ function addBulkProductCopies() {
   const filter = currentMarketingFilter();
   if (filter.scope === "product" && !filter.product) return toast("请先选择一个产品", true);
   if (filter.scope === "category" && !filter.category) return toast("请先选择一个分类", true);
-  const existing = new Set(filteredProductCopies().map(({ entry }) => entry.text));
+  const existing = new Set(targetProductCopies().map(({ entry }) => entry.text));
+  const group = $("#marketing-bulk-group").value || "其他";
   let added = 0;
   for (const text of lines) {
     if (existing.has(text)) continue;
@@ -1147,6 +1224,7 @@ function addBulkProductCopies() {
       product: filter.scope === "product" ? filter.product : "*",
       regions: ["侧栏卖点"],
       region: "侧栏卖点",
+      group,
       text,
       priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
       enabled: true,
@@ -1157,6 +1235,101 @@ function addBulkProductCopies() {
   renderProductCopies();
   renderMarketingProductGrid();
   toast(added ? `已添加 ${added} 条营销文案` : "这些文案已经存在");
+}
+
+function openMarketingJsonDialog() {
+  const filter = currentMarketingFilter();
+  if (filter.scope === "product" && !filter.product) return toast("请先选择要导入文案的产品", true);
+  if (filter.scope === "category" && !filter.category) return toast("请先选择要导入文案的分类", true);
+  const scopeLabel = filter.scope === "product" ? "产品专属" : filter.scope === "category" ? "分类通用" : "全局通用";
+  $("#marketing-json-target").textContent = `当前目标：${scopeLabel}｜${filter.category === "*" ? "全部分类" : filter.category}｜${filter.product === "*" ? "全部产品" : filter.product}`;
+  $("#marketing-json-prompt").value = marketingJsonPrompt();
+  $("#marketing-json-example").textContent = JSON.stringify(marketingJsonExample(), null, 2);
+  $("#marketing-json-text").value = "";
+  $("#marketing-json-file").value = "";
+  $("#marketing-json-mode").value = "append";
+  $("#marketing-json-status").className = "json-import-status";
+  $("#marketing-json-status").textContent = "尚未校验。导入只会带入当前编辑器，仍需点击“保存营销文案”才会写入文件。";
+  $("#marketing-json-preview").innerHTML = "";
+  $("#apply-marketing-json").disabled = true;
+  state.marketingImportEntries = [];
+  $("#marketing-json-dialog").showModal();
+}
+
+function closeMarketingJsonDialog() {
+  $("#marketing-json-dialog").close();
+  state.marketingImportEntries = [];
+}
+
+function marketingEntryMatchesFilter(entry, filter) {
+  return entry.scope === filter.scope
+    && (filter.scope === "global" || entry.category === filter.category)
+    && (filter.scope !== "product" || entry.product === filter.product);
+}
+
+async function validateMarketingJson() {
+  const status = $("#marketing-json-status");
+  try {
+    const json = $("#marketing-json-text").value.trim();
+    if (!json) throw new Error("请粘贴JSON或选择JSON文件");
+    const filter = currentMarketingFilter();
+    status.className = "json-import-status";
+    status.textContent = "正在校验营销词、分组和位置属性…";
+    const result = await api("/api/marketing/import-json", {
+      method: "POST",
+      body: JSON.stringify({ json, ...filter }),
+    });
+    const mismatched = result.entries.filter((entry) => !marketingEntryMatchesFilter(entry, filter));
+    if (mismatched.length) throw new Error(`有${mismatched.length}条文案的scope/category/product与当前编辑目标不一致，请让AI使用页面提示词中的当前目标`);
+    state.marketingImportEntries = result.entries;
+    const groups = Object.entries(result.summary.groups).map(([group, count]) => `${group}${count}条`).join("、");
+    status.className = "json-import-status success";
+    status.textContent = `校验通过：共${result.summary.count}条，重复${result.summary.duplicateCount}条。分组：${groups || "无"}。`;
+    $("#marketing-json-preview").innerHTML = result.entries.map((entry) => `
+      <div class="marketing-json-preview-row ${entry.duplicate ? "duplicate" : ""}">
+        <strong>${escapeHtml(entry.text)}</strong>
+        <span>${escapeHtml(entry.group)}</span>
+        <small>${escapeHtml(entry.regions.join("、"))}${entry.duplicate ? "｜已有重复" : ""}</small>
+      </div>`).join("");
+    $("#apply-marketing-json").disabled = false;
+  } catch (error) {
+    state.marketingImportEntries = [];
+    $("#apply-marketing-json").disabled = true;
+    status.className = "json-import-status error";
+    status.textContent = error.message;
+    $("#marketing-json-preview").innerHTML = "";
+    toast(error.message, true);
+  }
+}
+
+function applyMarketingJson() {
+  const entries = state.marketingImportEntries;
+  if (!entries.length) return toast("请先校验JSON", true);
+  const filter = currentMarketingFilter();
+  const mode = $("#marketing-json-mode").value;
+  if (mode === "replace") {
+    const currentCount = targetProductCopies().length;
+    if (currentCount && !window.confirm(`将用导入的${entries.length}条文案替换当前范围已有的${currentCount}条文案，确定继续吗？`)) return;
+    const removed = state.data.productMarketingEntries.filter((entry) => marketingEntryMatchesFilter(entry, filter));
+    state.data.productMarketingEntries = state.data.productMarketingEntries.filter((entry) => !marketingEntryMatchesFilter(entry, filter));
+    state.pendingDeletedMarketing.push(...removed.map((entry) => ({ entry: structuredClone(entry), index: -1 })));
+  }
+  const existing = new Set(state.data.productMarketingEntries.map(marketingCopyKey));
+  let added = 0;
+  for (const imported of entries) {
+    const { duplicate, confidence, ...entry } = imported;
+    const key = marketingCopyKey(entry);
+    if (existing.has(key)) continue;
+    existing.add(key);
+    state.data.productMarketingEntries.push(entry);
+    added += 1;
+  }
+  state.marketingCopyGroup = "全部";
+  closeMarketingJsonDialog();
+  renderProductCopies();
+  renderMarketingProductGrid();
+  $("#marketing-editor-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  toast(`已带入${added}条营销文案，确认后请点击“保存营销文案”`);
 }
 
 function nextTemplateNumber() {
@@ -1464,6 +1637,7 @@ $("#preview-category").onchange = (event) => {
 };
 $("#marketing-scope").onchange = (event) => {
   state.marketingScope = event.target.value;
+  state.marketingCopyGroup = "全部";
   if (state.marketingScope === "product") state.marketingCategory = "全部";
   if (state.marketingScope === "category" && !state.data.categories.includes(state.marketingCategory)) {
     state.marketingCategory = state.data.categories[0] || null;
@@ -1479,10 +1653,37 @@ $("#marketing-product-search").oninput = (event) => {
 };
 $("#add-product-copy").onclick = addProductCopy;
 $("#add-bulk-product-copy").onclick = addBulkProductCopies;
+$("#open-marketing-json-import").onclick = openMarketingJsonDialog;
+$("#close-marketing-json-dialog").onclick = closeMarketingJsonDialog;
+$("#cancel-marketing-json-dialog").onclick = closeMarketingJsonDialog;
+$("#marketing-json-file").onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    $("#marketing-json-text").value = await file.text();
+    $("#marketing-json-status").className = "json-import-status";
+    $("#marketing-json-status").textContent = `已读取文件：${file.name}，请点击“校验并预览”。`;
+    $("#apply-marketing-json").disabled = true;
+  } catch (error) {
+    $("#marketing-json-status").className = "json-import-status error";
+    $("#marketing-json-status").textContent = `读取失败：${error.message}`;
+  }
+};
+$("#fill-marketing-json-example").onclick = () => {
+  $("#marketing-json-text").value = JSON.stringify(marketingJsonExample(), null, 2);
+  $("#marketing-json-status").className = "json-import-status";
+  $("#marketing-json-status").textContent = "示例已填入，可直接校验。";
+  $("#apply-marketing-json").disabled = true;
+};
+$("#copy-marketing-json-prompt").onclick = () => copyText(marketingJsonPrompt(), "AI营销词分析提示词已复制");
+$("#copy-marketing-json-example").onclick = () => copyText(JSON.stringify(marketingJsonExample(), null, 2), "营销词JSON示例已复制");
+$("#validate-marketing-json").onclick = validateMarketingJson;
+$("#apply-marketing-json").onclick = applyMarketingJson;
 $("#save-marketing-page").onclick = async () => {
   try {
     if (state.data.productMarketingEntries.some((entry) => !entry.text.trim())) throw new Error("请填写或删除空白营销词");
     if (state.data.productMarketingEntries.some((entry) => !entryRegions(entry).length)) throw new Error("每条营销词至少需要一个位置属性");
+    if (state.data.productMarketingEntries.some((entry) => !MARKETING_COPY_GROUPS.includes(entry.group))) throw new Error("每条营销词必须选择一个有效的文案分组");
     await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({
       entries: state.data.productMarketingEntries,
       deletedEntries: state.pendingDeletedMarketing.map((item) => item.entry),

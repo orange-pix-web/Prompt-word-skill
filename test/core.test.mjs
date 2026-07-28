@@ -4,7 +4,9 @@ import {
   generatePromptMarkdown,
   generateCombinedPromptMarkdown,
   latestPromptVersion,
+  classifyMarketingGroup,
   marketingEntryKey,
+  marketingJsonToEntries,
   parseMarketing,
   parseMarketingExtras,
   mergeMarketingExtras,
@@ -48,6 +50,45 @@ test("产品营销词按产品专属、分类通用、全局通用依次选择",
     } },
   });
   assert.deepEqual(copy.points, ["腺肌胃炎", "蛋禽肉禽", "品质保障"]);
+});
+
+test("旧版7列营销词可自动分组，保存后升级为8列", () => {
+  const legacy = `| 作用范围 | 分类 | 产品名称 | 位置属性（可多个） | 营销文案 | 优先级 | 启用 |
+|---|---|---|---|---|---:|---|
+| 产品专属 | 消毒 | 单过硫酸氢钾消毒粉 | 顶部卖点、侧栏卖点 | 鸡瘟鸭瘟 | 112 | 是 |
+| 产品专属 | 消毒 | 单过硫酸氢钾消毒粉 | 侧栏卖点 | 兑水喷雾 | 100 | 是 |`;
+  const entries = parseProductMarketing(legacy);
+  assert.equal(entries[0].group, "病症营销词");
+  assert.equal(entries[1].group, "使用方式");
+  const upgraded = serializeProductMarketing(entries);
+  assert.match(upgraded, /文案分组/);
+  assert.equal(parseProductMarketing(upgraded)[0].group, "病症营销词");
+});
+
+test("AI营销词JSON可判断分组和位置并严格校验", () => {
+  const entries = marketingJsonToEntries({
+    scope: "product",
+    category: "消毒",
+    product: "单过硫酸氢钾消毒粉",
+    items: [
+      { text: "鸡瘟鸭瘟", regions: ["顶部卖点", "侧栏卖点"], priority: 112 },
+      { text: "兑水喷雾", group: "使用方式" },
+      { text: "厂家直发", group: "品质与渠道", regions: ["底栏文案"], confidence: 0.95 },
+    ],
+  });
+  assert.equal(entries[0].group, "病症营销词");
+  assert.deepEqual(entries[1].regions, ["侧栏卖点"]);
+  assert.equal(entries[2].confidence, 0.95);
+  assert.throws(() => marketingJsonToEntries({ items: [{ text: "测试", group: "未知分组" }] }), /不支持/);
+  assert.throws(() => marketingJsonToEntries({ items: [{ text: "测试", group: "其他", regions: ["未知位置"] }] }), /未知位置/);
+  assert.throws(() => marketingJsonToEntries({ items: [{ text: "重复文案" }, { text: "重复文案" }] }), /重复/);
+});
+
+test("营销文案自动分组覆盖常见类型", () => {
+  assert.equal(classifyMarketingGroup({ text: "养殖消毒粉", regions: ["副标题"] }), "产品定位");
+  assert.equal(classifyMarketingGroup({ text: "100g拌料200斤" }), "规格与储存");
+  assert.equal(classifyMarketingGroup({ text: "厂家直供" }), "品质与渠道");
+  assert.equal(classifyMarketingGroup({ text: "鸡鸭鹅专用" }), "适用对象");
 });
 
 test("同一营销文案可绑定多个位置但单张图只使用一次", () => {

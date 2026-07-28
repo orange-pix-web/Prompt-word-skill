@@ -10,7 +10,9 @@ import {
   generateCombinedPromptMarkdown,
   generatePromptMarkdown,
   latestPromptVersion,
+  MARKETING_COPY_GROUPS,
   marketingRegions,
+  marketingJsonToEntries,
   nextPromptPath,
   normalizeTemplateVisualLayout,
   parseMarketing,
@@ -421,8 +423,10 @@ async function apiSaveProductMarketing(body) {
   const categories = new Set(state.categories);
   const validScopes = new Set(["global", "category", "product"]);
   const validRegions = new Set(["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"]);
+  const validGroups = new Set(MARKETING_COPY_GROUPS);
   for (const entry of body.entries) {
     if (!validScopes.has(entry.scope)) throw new Error("营销词作用范围无效");
+    if (!validGroups.has(entry.group)) throw new Error(`未知文案分组：${entry.group || "未分组"}`);
     const regions = Array.isArray(entry.regions) && entry.regions.length ? entry.regions : [entry.region];
     if (!regions.length || regions.some((region) => !validRegions.has(region))) {
       throw new Error(`未知位置类型：${regions.join("、")}`);
@@ -623,6 +627,40 @@ async function apiImportTemplateJson(body) {
   return { ok: true, draft };
 }
 
+async function apiImportMarketingJson(body) {
+  const state = await loadState();
+  const entries = marketingJsonToEntries(body.json, {
+    scope: body.scope,
+    category: body.category,
+    product: body.product,
+  });
+  const productNames = new Set(state.products.map((item) => item.name));
+  const categories = new Set(state.categories);
+  for (const entry of entries) {
+    if (entry.scope === "category" && !categories.has(entry.category)) throw new Error(`未知分类：${entry.category}`);
+    if (entry.scope === "product" && !productNames.has(entry.product)) throw new Error(`未知产品：${entry.product}`);
+  }
+  const existingKeys = new Set(state.productMarketingEntries.map((entry) =>
+    [entry.scope, entry.category, entry.product, entry.text].join("\u001f")));
+  const withDuplicates = entries.map((entry) => ({
+    ...entry,
+    duplicate: existingKeys.has([entry.scope, entry.category, entry.product, entry.text].join("\u001f")),
+  }));
+  const groups = Object.fromEntries(MARKETING_COPY_GROUPS.map((group) => [
+    group,
+    withDuplicates.filter((entry) => entry.group === group).length,
+  ]).filter(([, count]) => count));
+  return {
+    ok: true,
+    entries: withDuplicates,
+    summary: {
+      count: entries.length,
+      duplicateCount: withDuplicates.filter((entry) => entry.duplicate).length,
+      groups,
+    },
+  };
+}
+
 async function serveStatic(requestPath, response) {
   const relative = requestPath === "/" ? "index.html" : requestPath.replace(/^\/+/, "");
   const file = safeChildPath(PUBLIC_ROOT, relative);
@@ -661,6 +699,7 @@ const server = http.createServer(async (request, response) => {
         "/api/system/open-folder": apiOpenFolder,
         "/api/references/import": apiImportReference,
         "/api/templates/import-json": apiImportTemplateJson,
+        "/api/marketing/import-json": apiImportMarketingJson,
       };
       const handler = handlers[url.pathname];
       if (!handler) return sendJson(response, 404, { error: "接口不存在" });
