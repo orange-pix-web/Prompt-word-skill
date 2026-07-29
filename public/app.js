@@ -122,6 +122,15 @@ function media(path) {
   return `/media?path=${encodeURIComponent(path)}`;
 }
 
+function productKey(product) {
+  return `${encodeURIComponent(product.category)}::${encodeURIComponent(product.name)}`;
+}
+
+function findProductByKey(key) {
+  return state.data.products.find((product) => productKey(product) === key)
+    || state.data.products.find((product) => product.name === key);
+}
+
 function formatSize(bytes) {
   return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
@@ -219,8 +228,8 @@ function renderMarketingNavigation() {
     state.marketingCategory = availableCategories[0] || null;
   }
   const visibleProducts = marketingVisibleProducts();
-  if (scope === "product" && !visibleProducts.some((item) => item.name === state.marketingProduct)) {
-    state.marketingProduct = visibleProducts[0]?.name || null;
+  if (scope === "product" && !visibleProducts.some((item) => productKey(item) === state.marketingProduct)) {
+    state.marketingProduct = visibleProducts[0] ? productKey(visibleProducts[0]) : null;
   }
   renderMarketingCategoryFilters();
   renderMarketingProductGrid();
@@ -249,7 +258,9 @@ function renderMarketingCategoryFilters() {
     state.marketingCategory = button.dataset.marketingCategory;
     state.marketingCopyGroup = "全部";
     const products = marketingVisibleProducts();
-    if (!products.some((item) => item.name === state.marketingProduct)) state.marketingProduct = products[0]?.name || null;
+    if (!products.some((item) => productKey(item) === state.marketingProduct)) {
+      state.marketingProduct = products[0] ? productKey(products[0]) : null;
+    }
     renderMarketingNavigation();
   });
 }
@@ -266,7 +277,8 @@ function renderMarketingProductGrid() {
   grid.classList.toggle("hidden", state.marketingScope !== "product");
   grid.innerHTML = products.map((product) => {
     const count = productMarketingCount(product);
-    return `<button type="button" class="marketing-name-card ${state.marketingProduct === product.name ? "selected" : ""}" data-marketing-product="${product.name}">
+    const key = productKey(product);
+    return `<button type="button" class="marketing-name-card ${state.marketingProduct === key ? "selected" : ""}" data-marketing-product="${key}">
       <strong>${product.name}</strong>
       <span>${product.category} · ${count} 条专属词</span>
     </button>`;
@@ -274,7 +286,7 @@ function renderMarketingProductGrid() {
   $$("[data-marketing-product]").forEach((card) => card.onclick = () => {
     state.marketingProduct = card.dataset.marketingProduct;
     state.marketingCopyGroup = "全部";
-    const product = state.data.products.find((item) => item.name === state.marketingProduct);
+    const product = findProductByKey(state.marketingProduct);
     if (product) state.marketingCategory = state.marketingCategory === "全部" ? "全部" : product.category;
     renderMarketingProductGrid();
     renderProductCopies();
@@ -316,8 +328,8 @@ function filteredProducts() {
 function renderProducts() {
   const products = filteredProducts();
   $("#product-grid").innerHTML = products.map((product) => `
-    <article class="product-card ${state.selectedProducts.has(product.name) ? "selected" : ""}">
-      <input class="card-check" type="checkbox" data-select-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}>
+    <article class="product-card ${state.selectedProducts.has(productKey(product)) ? "selected" : ""}">
+      <input class="card-check" type="checkbox" data-select-product="${productKey(product)}" ${state.selectedProducts.has(productKey(product)) ? "checked" : ""}>
       <span class="category-badge">${product.category}</span>
       <div class="product-thumb"><img loading="lazy" src="${media(product.imagePath)}" alt="${product.name}"></div>
       <div class="product-body">
@@ -326,8 +338,8 @@ function renderProducts() {
         <div class="tags">${product.tags.length ? product.tags.map((tag) => `<span class="tag">${tag}</span>`).join("") : `<span class="tag">待添加标签</span>`}</div>
       </div>
       <div class="card-foot">
-        <button data-detail="${product.name}">资料与分类</button>
-        <button data-generate-one="${product.name}">${product.latestPrompt ? `提示词 v${product.promptVersion}` : "生成提示词"}</button>
+        <button data-detail="${productKey(product)}">资料与分类</button>
+        <button data-generate-one="${productKey(product)}">${product.latestPrompt ? `提示词 v${product.promptVersion}` : "生成提示词"}</button>
       </div>
     </article>
   `).join("") || `<div class="summary-note">没有符合条件的产品</div>`;
@@ -787,7 +799,7 @@ function renderGenerator() {
   const visibleSelectedCount = visibleTemplates.filter((template) => state.selectedTemplates.has(template.number)).length;
   $("#generate-template-group-count").textContent = `当前显示 ${visibleTemplates.length} 个模板，已选 ${visibleSelectedCount} 个；全部共选 ${state.selectedTemplates.size} 个`;
   $("#generate-products").innerHTML = products.map((product) => `
-    <label class="check-row"><input type="checkbox" data-g-product="${product.name}" ${state.selectedProducts.has(product.name) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
+    <label class="check-row"><input type="checkbox" data-g-product="${productKey(product)}" ${state.selectedProducts.has(productKey(product)) ? "checked" : ""}><img src="${media(product.imagePath)}" alt=""><span>${product.name}<small>${product.category} · ${product.net}</small></span></label>
   `).join("");
   $("#generate-templates").innerHTML = visibleTemplates.map((template) => `
     <label class="generator-template-card ${state.selectedTemplates.has(template.number) ? "selected" : ""}">
@@ -920,15 +932,15 @@ function selectedMarketingSources() {
 
 function generationMarketingEntries() {
   const sources = new Set(selectedMarketingSources());
-  const products = state.data.products.filter((product) => state.selectedProducts.has(product.name));
-  const productNames = new Set(products.map((product) => product.name));
+  const products = state.data.products.filter((product) => state.selectedProducts.has(productKey(product)));
   const categories = new Set(products.map((product) => product.category));
   return state.data.productMarketingEntries.filter((entry) =>
     entry.enabled !== false &&
     sources.has(entry.scope) &&
     (entry.scope === "global" ||
       (entry.scope === "category" && categories.has(entry.category)) ||
-      (entry.scope === "product" && productNames.has(entry.product)))
+      (entry.scope === "product" && products.some((product) =>
+        entry.product === product.name && entry.category === product.category)))
   );
 }
 
@@ -1075,14 +1087,14 @@ function fillPreviewProducts() {
 }
 
 function currentMarketingFilter() {
-  const selectedProduct = state.data.products.find((item) => item.name === state.marketingProduct);
+  const selectedProduct = findProductByKey(state.marketingProduct);
   const category = state.marketingScope === "product"
     ? selectedProduct?.category
     : state.marketingScope === "category" ? state.marketingCategory : "*";
   return {
     scope: state.marketingScope,
     category,
-    product: state.marketingScope === "product" ? state.marketingProduct : "*",
+    product: state.marketingScope === "product" ? selectedProduct?.name : "*",
   };
 }
 
@@ -1401,8 +1413,8 @@ async function saveTemplates() {
   await reload();
 }
 
-function openProductDetail(name) {
-  const product = state.data.products.find((item) => item.name === name);
+function openProductDetail(key) {
+  const product = findProductByKey(key);
   state.detailProduct = product;
   $("#detail-name").textContent = product.name;
   $("#detail-image").src = media(product.imagePath);
@@ -1420,7 +1432,8 @@ async function reload() {
   const selectedTemplateCards = new Set(state.selectedTemplateCards);
   const selectedMarketingCopyKeys = new Set(state.selectedMarketingCopyKeys);
   state.data = await api("/api/state");
-  state.selectedProducts = new Set([...selectedProducts].filter((name) => state.data.products.some((item) => item.name === name)));
+  state.selectedProducts = new Set([...selectedProducts].filter((key) =>
+    state.data.products.some((item) => productKey(item) === key)));
   state.selectedTemplates = new Set([...selectedTemplates].filter((number) => state.data.templates.some((item) => item.number === number)));
   state.selectedTemplateCards = new Set([...selectedTemplateCards].filter((number) => state.data.templates.some((item) => item.number === number)));
   const availableCopyKeys = new Set(state.data.productMarketingEntries.map(marketingCopyKey));
@@ -1514,7 +1527,10 @@ $("#open-prompt-root").onclick = async () => {
   } catch (error) { toast(error.message, true); }
 };
 $("#select-all-products").onchange = (event) => {
-  for (const product of filteredProducts()) event.target.checked ? state.selectedProducts.add(product.name) : state.selectedProducts.delete(product.name);
+  for (const product of filteredProducts()) {
+    const key = productKey(product);
+    event.target.checked ? state.selectedProducts.add(key) : state.selectedProducts.delete(key);
+  }
   renderProducts(); renderGenerator();
 };
 $("#go-generate-products").onclick = () => switchView("generate");
@@ -1681,7 +1697,9 @@ $("#marketing-scope").onchange = (event) => {
 $("#marketing-product-search").oninput = (event) => {
   state.marketingSearch = event.target.value;
   const products = marketingVisibleProducts();
-  if (!products.some((item) => item.name === state.marketingProduct)) state.marketingProduct = products[0]?.name || null;
+  if (!products.some((item) => productKey(item) === state.marketingProduct)) {
+    state.marketingProduct = products[0] ? productKey(products[0]) : null;
+  }
   renderMarketingProductGrid();
   renderProductCopies();
 };
@@ -1760,7 +1778,7 @@ $("#layout-canvas").onpointerdown = (event) => {
 $("#generate-product-search").oninput = renderGenerator;
 $("#generate-select-products").onclick = () => {
   const allSelected = state.selectedProducts.size === state.data.products.length;
-  state.selectedProducts = allSelected ? new Set() : new Set(state.data.products.map((item) => item.name));
+  state.selectedProducts = allSelected ? new Set() : new Set(state.data.products.map(productKey));
   renderGenerator(); renderProducts();
 };
 $("#generate-select-templates").onclick = () => {
@@ -1821,10 +1839,16 @@ $("#save-detail").onclick = async () => {
     const product = state.detailProduct;
     const category = $("#detail-category").value;
     await api("/api/products/tags", { method: "POST", body: JSON.stringify({
-      name: product.name, net: $("#detail-net").value, form: $("#detail-form").value,
+      name: product.name, category: product.category,
+      net: $("#detail-net").value, form: $("#detail-form").value,
       tags: $("#detail-tags").value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
     }) });
-    if (category !== product.category) await api("/api/products/move", { method: "POST", body: JSON.stringify({ name: product.name, category }) });
+    if (category !== product.category) {
+      await api("/api/products/move", {
+        method: "POST",
+        body: JSON.stringify({ name: product.name, sourceCategory: product.category, category }),
+      });
+    }
     $("#product-detail-dialog").close(); await reload(); toast("产品资料已保存");
   } catch (error) { toast(error.message, true); }
 };

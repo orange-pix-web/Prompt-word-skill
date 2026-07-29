@@ -21,6 +21,8 @@ import {
   parseProductFacts,
   parseTemplates,
   parseProductMarketing,
+  productSelectionKey,
+  selectProductsByKeys,
   referenceJsonToTemplate,
   resolveProductMarketing,
   safeChildPath,
@@ -204,7 +206,10 @@ async function loadState() {
           source: "产品目录",
         });
       }
-      const fact = meta.products[name] || facts.get(name) || { net: "待填写", form: "other", tags: [] };
+      const fact = meta.products[productSelectionKey({ category: categoryEntry.name, name })]
+        || meta.products[name]
+        || facts.get(name)
+        || { net: "待填写", form: "other", tags: [] };
       products.push({
         name,
         category: categoryEntry.name,
@@ -306,16 +311,22 @@ async function apiAddProduct(body) {
   if (fsSync.existsSync(target)) throw new Error("同名产品图片已经存在");
   await fs.writeFile(target, buffer);
   const meta = await readJson(META_FILE, { products: {} });
-  meta.products[name] = { net: body.net || "待填写", form: body.form || "other", tags: body.tags || [] };
+  meta.products[productSelectionKey({ category, name })] = {
+    net: body.net || "待填写",
+    form: body.form || "other",
+    tags: body.tags || [],
+  };
   await saveMeta(meta);
   return { ok: true };
 }
 
 async function apiMoveProduct(body) {
   const name = String(body.name || "");
+  const sourceCategory = String(body.sourceCategory || "");
   const targetCategory = String(body.category || "");
   const state = await loadState();
-  const product = state.products.find((item) => item.name === name);
+  const product = state.products.find((item) =>
+    item.name === name && (!sourceCategory || item.category === sourceCategory));
   if (!product) throw new Error("找不到产品");
   if (!state.categories.includes(targetCategory)) throw new Error("目标分类不存在");
   if (product.category === targetCategory) return { ok: true };
@@ -330,13 +341,22 @@ async function apiMoveProduct(body) {
   for (const file of related) {
     await fs.rename(path.join(sourceFolder, file), path.join(targetFolder, file));
   }
+  const meta = await readJson(META_FILE, { products: {} });
+  const sourceKey = productSelectionKey(product);
+  const targetKey = productSelectionKey({ category: targetCategory, name });
+  if (meta.products[sourceKey]) {
+    meta.products[targetKey] = meta.products[sourceKey];
+    delete meta.products[sourceKey];
+    await saveMeta(meta);
+  }
   return { ok: true, moved: related.length };
 }
 
 async function apiSaveTags(body) {
   const meta = await readJson(META_FILE, { products: {} });
-  const current = meta.products[body.name] || {};
-  meta.products[body.name] = {
+  const key = productSelectionKey({ category: body.category, name: body.name });
+  const current = meta.products[key] || meta.products[body.name] || {};
+  meta.products[key] = {
     ...current,
     net: body.net || current.net || "待填写",
     form: body.form || current.form || "other",
@@ -531,7 +551,7 @@ async function apiGeneratePrompts(body) {
     copyKeys: [...selectedCopyKeys],
   });
   const generated = [];
-  const chosenProducts = state.products.filter((item) => selectedProducts.has(item.name));
+  const chosenProducts = selectProductsByKeys(state.products, [...selectedProducts]);
   if (body.mode === "combined") {
     if (chosenProducts.length < 2) throw new Error("多产品组合模式请至少选择两个产品");
     const combinedRows = new Map(templates.map((template) => [

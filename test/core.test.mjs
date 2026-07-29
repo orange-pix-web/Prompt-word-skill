@@ -21,7 +21,18 @@ import {
   serializeProductMarketing,
   safeChildPath,
   selectMarketingEntries,
+  productSelectionKey,
+  selectProductsByKeys,
 } from "../lib/core.mjs";
+
+test("同名产品使用分类与名称组合键独立选择", () => {
+  const products = [
+    { category: "鸡鸭鹅禽类", name: "格豆散" },
+    { category: "鸽子鸟类", name: "格豆散" },
+  ];
+  const selected = selectProductsByKeys(products, [productSelectionKey(products[1])]);
+  assert.deepEqual(selected, [products[1]]);
+});
 
 test("营销文案支持扩展卖点并可序列化", () => {
   const rows = [{
