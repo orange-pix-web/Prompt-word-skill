@@ -22,8 +22,46 @@ import {
   safeChildPath,
   selectMarketingEntries,
   productSelectionKey,
+  productCategories,
   selectProductsByKeys,
 } from "../lib/core.mjs";
+
+test("产品支持一个主分类和多个附加分类", () => {
+  const product = {
+    name: "肠安康",
+    category: "鸡鸭鹅禽类",
+    categories: ["鸡鸭鹅禽类", "猪", "牛羊", "猪"],
+  };
+  assert.deepEqual(productCategories(product), ["鸡鸭鹅禽类", "猪", "牛羊"]);
+  const entries = [
+    { scope: "category", category: "牛羊", product: "*", regions: ["侧栏卖点"], text: "牛羊通用", priority: 50, enabled: true },
+    { scope: "global", category: "*", product: "*", regions: ["侧栏卖点"], text: "全局通用", priority: 10, enabled: true },
+  ];
+  const copy = resolveProductMarketing(entries, product, {
+    number: "01",
+    points: 2,
+    visualLayout: { elements: {
+      point1: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 20 },
+      point2: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 30 },
+    } },
+  });
+  assert.deepEqual(copy.points, ["牛羊通用", "全局通用"]);
+});
+
+test("三位模板编号可以继续用于文案轮换", () => {
+  const entries = [
+    { scope: "global", category: "*", product: "*", regions: ["侧栏卖点"], text: "卖点甲", priority: 20, enabled: true },
+    { scope: "global", category: "*", product: "*", regions: ["侧栏卖点"], text: "卖点乙", priority: 10, enabled: true },
+  ];
+  const copy = resolveProductMarketing(entries, { name: "测试产品", category: "测试分类" }, {
+    number: "100",
+    points: 1,
+    visualLayout: { elements: {
+      point1: { type: "sellingPoint", copyRegion: "侧栏卖点", y: 20 },
+    } },
+  });
+  assert.equal(copy.points.length, 1);
+});
 
 test("同名产品使用分类与名称组合键独立选择", () => {
   const products = [

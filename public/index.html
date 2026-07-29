@@ -310,6 +310,7 @@
         </div>
         <label>产品名称<input id="product-name" required></label>
         <label>所属分类<select id="product-category"></select></label>
+        <label class="wide">附加分类<input id="product-categories" placeholder="可填写多个分类，用逗号分隔"></label>
         <label>净含量<input id="product-net" placeholder="例如 100g" required></label>
         <label>包装形态<select id="product-form-type"><option value="bag">袋装</option><option value="liquid">瓶装液体</option><option value="tablet">片状</option><option value="other">其他</option></select></label>
         <label class="wide">标签<input id="product-tags" placeholder="多个标签用逗号分隔"></label>
@@ -325,7 +326,7 @@
         <div class="form-grid">
           <label>模板编号<input id="tpl-number" maxlength="2" required></label>
           <label>模板名称<input id="tpl-name" required></label>
-          <label class="wide">模板分组<input id="tpl-group" list="template-group-options" placeholder="例如：禽类模板、瓶装模板、促销模板"><datalist id="template-group-options"></datalist></label>
+          <label class="wide">模板分组（可多个，用逗号分隔）<input id="tpl-group" list="template-group-options" placeholder="例如：通用，杆舒，瓶装模板"><datalist id="template-group-options"></datalist></label>
           <label>副标题来源<select id="tpl-subtitle"><option>副标题</option><option>辅助文案</option><option>自动用量</option><option>无</option></select></label>
           <label>默认营销卖点数量<input id="tpl-points" type="number" min="0" max="20" value="3"></label>
           <label>底栏来源<select id="tpl-bottom-source"><option>底栏文案</option><option>辅助文案+底栏文案</option><option>自动用量</option></select></label>
@@ -407,7 +408,8 @@
       <div class="detail-layout">
         <img id="detail-image" alt="">
         <div class="detail-fields">
-          <label>分类<select id="detail-category"></select></label>
+          <label>主分类<select id="detail-category"></select></label>
+          <label class="wide">附加分类（可多个，用逗号分隔）<input id="detail-categories" placeholder="例如：鸡鸭鹅禽类，牛羊"></label>
           <label>净含量<input id="detail-net"></label>
           <label>包装形态<select id="detail-form"><option value="bag">袋装</option><option value="liquid">瓶装液体</option><option value="tablet">片状</option><option value="other">其他</option></select></label>
           <label>标签<input id="detail-tags" placeholder="用逗号分隔"></label>

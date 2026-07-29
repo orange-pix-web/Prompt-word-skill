@@ -21,6 +21,7 @@ import {
   parseProductFacts,
   parseTemplates,
   parseProductMarketing,
+  productCategories,
   productSelectionKey,
   selectProductsByKeys,
   referenceJsonToTemplate,
@@ -150,15 +151,21 @@ async function loadState() {
   const groupAssignments = templateGroups.assignments && typeof templateGroups.assignments === "object"
     ? templateGroups.assignments : templateGroups;
   const savedGroups = Array.isArray(templateGroups.groups) ? templateGroups.groups : [];
-  const templates = parseTemplates(templateText).map((template) => ({
-    ...template,
-    group: String(groupAssignments[template.number] || "未分组"),
-    visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
-  }));
+  const templates = parseTemplates(templateText).map((template) => {
+    const assignment = groupAssignments[template.number];
+    const groups = [...new Set((Array.isArray(assignment) ? assignment : [assignment || "未分组"])
+      .map((group) => String(group).trim()).filter(Boolean))];
+    return {
+      ...template,
+      group: groups[0] || "未分组",
+      groups: groups.length ? groups : ["未分组"],
+      visualLayout: normalizeTemplateVisualLayout(layouts[template.number], template.number, template.points),
+    };
+  });
   const templateGroupList = [...new Set([
     "未分组",
     ...savedGroups.map(String),
-    ...templates.map((template) => template.group),
+    ...templates.flatMap((template) => template.groups),
   ].map((group) => group.trim()).filter(Boolean))];
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
   const productMarketingEntries = parseProductMarketing(productMarketingText);
@@ -219,6 +226,7 @@ async function loadState() {
         net: fact.net || "待填写",
         form: fact.form || "other",
         tags: fact.tags || [],
+        categories: productCategories({ category: categoryEntry.name, categories: fact.categories }),
         latestPrompt: latest?.name || null,
         promptVersion: latest?.version || 0,
       });
@@ -315,6 +323,7 @@ async function apiAddProduct(body) {
     net: body.net || "待填写",
     form: body.form || "other",
     tags: body.tags || [],
+    categories: productCategories({ category, categories: body.categories }),
   };
   await saveMeta(meta);
   return { ok: true };
@@ -361,6 +370,7 @@ async function apiSaveTags(body) {
     net: body.net || current.net || "待填写",
     form: body.form || current.form || "other",
     tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
+    categories: productCategories({ category: body.category, categories: body.categories || current.categories }),
   };
   await saveMeta(meta);
   return { ok: true };
@@ -370,14 +380,18 @@ async function apiSaveTemplates(body) {
   if (!Array.isArray(body.templates)) throw new Error("模板数据无效");
   const numbers = new Set();
   for (const template of body.templates) {
-    if (!/^\d{2}$/.test(template.number)) throw new Error("模板编号必须是两位数字");
+    if (!/^\d{2,4}$/.test(template.number)) throw new Error("模板编号必须是2至4位数字");
     if (numbers.has(template.number)) throw new Error(`模板编号重复：${template.number}`);
     numbers.add(template.number);
     if (hasSuspectedEncodingDamage(template)) {
       throw new Error(`模板${template.number}中检测到连续问号，可能发生中文编码损坏，已停止保存。请刷新数据后重试`);
     }
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
-    if (String(template.group || "").trim() === "全部") throw new Error("“全部”是筛选项，不能作为模板分组名称");
+    const groups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group])
+      .map((group) => String(group || "").trim()).filter(Boolean))];
+    if (groups.includes("全部")) throw new Error("“全部”是筛选项，不能作为模板分组名称");
+    template.groups = groups.length ? groups : ["未分组"];
+    template.group = template.groups[0];
   }
   if (Array.isArray(body.groups) && body.groups.some((group) => String(group).trim() === "全部")) {
     throw new Error("“全部”是筛选项，不能作为模板分组名称");
@@ -395,11 +409,15 @@ async function apiSaveTemplates(body) {
     .map((template) => [template.number, template.visualLayout]));
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
   const groupAssignments = Object.fromEntries(body.templates
-    .map((template) => [template.number, String(template.group || "未分组").trim() || "未分组"]));
+    .map((template) => {
+      const groups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group || "未分组"])
+        .map((group) => String(group).trim()).filter(Boolean))];
+      return [template.number, groups.length ? groups : ["未分组"]];
+    }));
   const templateGroups = [...new Set([
     "未分组",
     ...(Array.isArray(body.groups) ? body.groups : []),
-    ...Object.values(groupAssignments),
+    ...Object.values(groupAssignments).flat(),
   ].map((group) => String(group).trim()).filter(Boolean))];
   await fs.writeFile(TEMPLATE_GROUPS_FILE, `${JSON.stringify({
     groups: templateGroups,
