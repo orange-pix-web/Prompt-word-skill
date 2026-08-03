@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   generatePromptMarkdown,
+  generateBackgroundPromptMarkdown,
+  generateProductBackgroundPromptMarkdown,
   generateCombinedPromptMarkdown,
   latestPromptVersion,
+  promptFileName,
   classifyMarketingGroup,
   marketingEntryKey,
   marketingJsonToEntries,
@@ -130,7 +133,26 @@ test("AI营销词JSON可判断分组和位置并严格校验", () => {
   assert.equal(entries[2].confidence, 0.95);
   assert.throws(() => marketingJsonToEntries({ items: [{ text: "测试", group: "未知分组" }] }), /不支持/);
   assert.throws(() => marketingJsonToEntries({ items: [{ text: "测试", group: "其他", regions: ["未知位置"] }] }), /未知位置/);
-  assert.throws(() => marketingJsonToEntries({ items: [{ text: "重复文案" }, { text: "重复文案" }] }), /重复/);
+  const duplicated = marketingJsonToEntries({ items: [{ text: "重复文案" }, { text: "重复文案" }] });
+  assert.equal(duplicated.length, 1);
+  assert.equal(duplicated.importSummary.skippedDuplicateCount, 1);
+});
+
+test("自定义分组改名后兼容旧JSON与旧营销词", () => {
+  const config = {
+    groups: ["产品说明", "症状卖点", "使用方式", "其他"],
+    aliases: { "产品定位": "产品说明", "病症营销词": "症状卖点" },
+  };
+  const imported = marketingJsonToEntries({
+    items: [{ text: "腺肌胃炎", group: "病症营销词" }, { text: "产品介绍", group: "产品定位" }],
+  }, {}, config);
+  assert.deepEqual(imported.map((entry) => entry.group), ["症状卖点", "产品说明"]);
+  const legacy = `| 作用范围 | 分类 | 产品名称 | 位置属性（可多个） | 文案分组 | 营销文案 | 优先级 | 启用 |
+|---|---|---|---|---|---|---:|---|
+| 产品专属 | 消毒 | 测试产品 | 顶部卖点 | 病症营销词 | 腺肌胃炎 | 100 | 是 |`;
+  const restored = parseProductMarketing(legacy, config);
+  assert.equal(restored[0].group, "症状卖点");
+  assert.match(serializeProductMarketing(restored, config), /症状卖点/);
 });
 
 test("营销文案自动分组覆盖常见类型", () => {
@@ -214,8 +236,11 @@ test("识别产品规格和提示词版本", () => {
   assert.deepEqual(latestPromptVersion([
     "肠安100-生图提示词.md",
     "肠安100-生图提示词-v2.md",
-    "肠安100-生图提示词-v4.md",
-  ], "肠安100"), { name: "肠安100-生图提示词-v4.md", version: 4 });
+    "肠安100-生图提示词-v4-第01组.md",
+    "肠安100-生图提示词-v4-第02组.md",
+  ], "肠安100"), { name: "肠安100-生图提示词-v4-第01组.md", version: 4 });
+  assert.equal(promptFileName("肠安100", 5, 2, 3), "肠安100-生图提示词-v5-第02组.md");
+  assert.equal(promptFileName("甲＋乙", 2, 1, 2, "组合主图提示词"), "甲＋乙-组合主图提示词-v2-第01组.md");
 });
 
 test("生成所选模板提示词", () => {
@@ -235,6 +260,65 @@ test("生成所选模板提示词", () => {
   assert.match(result, /提示词01/);
   assert.match(result, /具体字号按照各卖点矩形框的字号比例执行/);
   assert.match(result, /现货直发｜厂家直发/);
+});
+
+test("底图提示词不包含产品和营销文案", () => {
+  const markdown = generateBackgroundPromptMarkdown({
+    templates: [{
+      number: "01", name: "肠安100场景", layout: "蓝天草地背景，产品位于右侧，左侧为卖点。",
+      special: "健康动物作为背景", visualLayout: { elements: {
+        backgroundRegion1: { type: "backgroundRegion", x: 0, y: 0, w: 100, h: 100, z: 1, visible: true, text: "明亮草地" },
+        product1: { type: "product", x: 50, y: 15, w: 40, h: 65, z: 4, visible: true },
+        point1: { type: "sellingPoint", x: 8, y: 35, w: 30, h: 8, z: 5, visible: true },
+      } },
+    }],
+    knownProductNames: ["肠安100"],
+  });
+  assert.match(markdown, /无产品无文案底图/);
+  assert.match(markdown, /不得出现任何产品、包装/);
+  assert.match(markdown, /背景图层和非文字装饰/);
+  assert.doesNotMatch(markdown, /使用我上传的/);
+  assert.doesNotMatch(markdown, /肠安100/);
+});
+
+test("产品背景图保留包装文字但不生成额外文案", () => {
+  const markdown = generateProductBackgroundPromptMarkdown({
+    product: {
+      name: "豆必清", imageName: "豆必清.png", category: "鸡鸭鹅禽类",
+      net: "100g", brand: "牧德旺", form: "bag",
+    },
+    templates: [{
+      number: "02", name: "蓝色信息板", layout: "产品固定右侧，左侧为标题和卖点。",
+      special: "无", visualLayout: { elements: {
+        product1: { type: "product", x: 55, y: 18, w: 38, h: 62, z: 4, visible: true },
+        title: { type: "title", x: 7, y: 12, w: 38, h: 12, z: 5, visible: true },
+      } },
+    }],
+    knownProductNames: ["豆必清", "单过硫酸氢钾消毒粉"],
+  });
+  assert.match(markdown, /包装上的品牌【牧德旺】、产品名称【豆必清】、净含量【100g】及所有原有印刷文字必须逐字保留/);
+  assert.match(markdown, /不得出现任何文字、数字、Logo、水印/);
+  assert.match(markdown, /文字、卖点、净含量及底栏图层全部忽略并留白/);
+  assert.doesNotMatch(markdown, /单过硫酸氢钾消毒粉/);
+});
+
+test("同名包装的不同品牌使用显示名称且不触发包含关系误报", () => {
+  const templates = [{
+    enabled: true, number: "01", name: "测试", layout: "产品位于右侧。", subtitleSource: "副标题",
+    points: 1, bottomSource: "底栏文案", bottomStyle: "标准单行", special: "无", netPosition: "产品附近",
+  }];
+  const result = generatePromptMarkdown({
+    product: {
+      name: "宠微森宠物营养补充剂", displayName: "宠物营养补充剂", brand: "宠微森",
+      imageName: "宠微森宠物营养补充剂.png", category: "猫狗", net: "200片", form: "tablet",
+    },
+    templates,
+    marketingRows: new Map([["01", { subtitle: "温和排毛", support: "", points: ["养护肠道"], footer: "猫狗日常常备" }]]),
+    knownProductNames: ["宠微森宠物营养补充剂", "大成瑞之恒宠物营养补充剂", "营养补充剂"],
+  });
+  assert.match(result, /# 宠物营养补充剂｜宠微森｜网页版一次批量生图提示词/);
+  assert.match(result, /包装品牌【宠微森】/);
+  assert.match(result, /主标题统一写产品名称【宠物营养补充剂】/);
 });
 
 test("临时背景备注覆盖模板专用场景并清理其他产品名", () => {
@@ -269,6 +353,33 @@ test("临时背景备注覆盖模板专用场景并清理其他产品名", () =>
   assert.doesNotMatch(markdown, /暗色鸡舍背景/);
   assert.doesNotMatch(markdown, /鸡舍夜景左右分栏/);
   assert.doesNotMatch(markdown, /作业。。/);
+});
+
+test("跨产品使用模板时不输出来源图路径或原产品名称", () => {
+  const templates = [{
+    enabled: true,
+    number: "100",
+    name: "单过硫酸氢钾消毒粉·右产品三卖点·1",
+    layout: "产品固定在右侧，左侧排列三条卖点。构图参考【单过硫酸氢钾消毒粉-主图01.png】；来源图：单过硫酸氢钾消毒粉-主图01.png",
+    subtitleSource: "无",
+    points: 1,
+    bottomSource: "底栏文案",
+    bottomStyle: "标准单行",
+    special: "来源图【参考图/单过硫酸氢钾消毒粉/主图01.png】仅用于构图、配色、文字层级和区域比例核对；不得复制来源图中的旧包装、旧产品名、品牌、商标或未经提供的用量。主体必须严格使用当前所选产品图。",
+    netPosition: "产品附近",
+  }];
+  const markdown = generatePromptMarkdown({
+    product: { name: "豆必清", imageName: "豆必清.png", category: "鸡鸭鹅禽类", net: "100g", form: "bag" },
+    templates,
+    marketingRows: new Map([["100", { subtitle: "", support: "", points: ["禽舍可用"], footer: "养殖常备" }]]),
+    knownProductNames: ["豆必清", "单过硫酸氢钾消毒粉"],
+  });
+  assert.match(markdown, /右产品三卖点·1布局/);
+  assert.match(markdown, /模板原图中的旧包装/);
+  assert.doesNotMatch(markdown, /单过硫酸氢钾消毒粉/);
+  assert.doesNotMatch(markdown, /参考图\//);
+  assert.doesNotMatch(markdown, /来源图/);
+  assert.doesNotMatch(markdown, /构图参考/);
 });
 
 test("支持自定义数量卖点和可视化坐标", () => {

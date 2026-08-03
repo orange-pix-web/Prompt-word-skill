@@ -7,8 +7,14 @@ const state = {
   selectedTemplates: new Set(),
   selectedTemplateCards: new Set(),
   selectedMarketingCopyKeys: new Set(),
+  selectedEditorMarketingKeys: new Set(),
+  marketingCopyTargetKeys: new Set(),
+  marketingCopyTargetCategories: new Set(),
   templateGroup: "全部",
+  templateSearch: "",
+  templateNumberRange: "",
   generateTemplateGroup: "全部",
+  generateProductCategory: "全部",
   promptCategory: "全部",
   promptSearch: "",
   lastGeneratedPaths: [],
@@ -18,6 +24,7 @@ const state = {
   marketingSearch: "",
   marketingCopyGroup: "全部",
   marketingImportEntries: [],
+  marketingGroupDraft: null,
   editingTemplateNumber: null,
   editingVisualLayout: null,
   selectedLayoutElement: null,
@@ -84,6 +91,10 @@ async function api(url, options = {}) {
 
 function toast(message, error = false, action = null) {
   const element = $("#toast");
+  const activeDialogs = [...document.querySelectorAll("dialog[open]")];
+  const topDialog = activeDialogs.at(-1);
+  const host = topDialog?.querySelector(".dialog-card") || document.body;
+  if (element.parentElement !== host) host.append(element);
   element.innerHTML = "";
   element.append(document.createTextNode(message));
   if (action) {
@@ -98,7 +109,10 @@ function toast(message, error = false, action = null) {
   }
   element.className = `toast show${error ? " error" : ""}`;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.className = "toast", action ? 6000 : 3000);
+  toast.timer = setTimeout(() => {
+    element.className = "toast";
+    if (element.parentElement !== document.body) document.body.append(element);
+  }, action ? 6000 : 3000);
 }
 
 async function copyText(text, successMessage) {
@@ -116,6 +130,15 @@ async function copyText(text, successMessage) {
     if (!copied) throw new Error("浏览器未允许复制，请手动选择文字复制");
   }
   toast(successMessage);
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function media(path) {
@@ -138,8 +161,22 @@ function productInCategory(product, category) {
 }
 
 function templateGroupsOf(template = {}) {
-  return [...new Set((Array.isArray(template.groups) ? template.groups : [template.group || "未分组"])
+  const groups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group || "未分组"])
     .map((value) => String(value || "").trim()).filter(Boolean))];
+  return groups.length > 1 || groups.includes("通用") ? ["通用"] : (groups.length ? groups : ["未分组"]);
+}
+
+function templateNumberMatchesRange(number, rangeText = "") {
+  const value = Number(number);
+  const text = String(rangeText).trim();
+  if (!text) return true;
+  const exact = text.match(/^\d+$/);
+  if (exact) return value === Number(text);
+  const range = text.match(/^(\d+)\s*(?:-|~|～|至)\s*(\d+)$/);
+  if (!range) return true;
+  const start = Math.min(Number(range[1]), Number(range[2]));
+  const end = Math.max(Number(range[1]), Number(range[2]));
+  return value >= start && value <= end;
 }
 
 function templateInGroup(template, group) {
@@ -165,6 +202,26 @@ function formatDate(value) {
 const MARKETING_REGIONS = ["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"];
 const MARKETING_COPY_GROUPS = ["产品定位", "病症营销词", "使用方式", "适用对象", "使用场景", "产品特点", "规格与储存", "品质与渠道", "底栏口号", "其他"];
 
+function activeMarketingGroups() {
+  const groups = state.data?.marketingGroups;
+  return Array.isArray(groups) && groups.length ? groups : MARKETING_COPY_GROUPS;
+}
+
+function activeMarketingGroup(name) {
+  const groups = activeMarketingGroups();
+  if (groups.includes(name)) return name;
+  const aliases = state.data?.marketingGroupAliases || {};
+  return groups.includes(aliases[name]) ? aliases[name] : (groups.includes("其他") ? "其他" : groups[0]);
+}
+
+function renderMarketingBulkGroupOptions() {
+  const select = $("#marketing-bulk-group");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = activeMarketingGroups().map((group) => `<option>${escapeHtml(group)}</option>`).join("");
+  select.value = activeMarketingGroups().includes(previous) ? previous : activeMarketingGroup("其他");
+}
+
 function marketingJsonExample() {
   const filter = currentMarketingFilter();
   return {
@@ -172,9 +229,9 @@ function marketingJsonExample() {
     category: filter.category || "*",
     product: filter.product || "*",
     items: [
-      { text: "鸡瘟鸭瘟", group: "病症营销词", regions: ["顶部卖点", "侧栏卖点"], priority: 112, enabled: true, confidence: 0.98 },
-      { text: "兑水喷雾", group: "使用方式", regions: ["侧栏卖点"], priority: 100, enabled: true, confidence: 0.96 },
-      { text: "厂家直发", group: "品质与渠道", regions: ["底栏文案"], priority: 90, enabled: true, confidence: 0.99 },
+      { text: "鸡瘟鸭瘟", group: activeMarketingGroup("病症营销词"), regions: ["顶部卖点", "侧栏卖点"], priority: 112, enabled: true, confidence: 0.98 },
+      { text: "兑水喷雾", group: activeMarketingGroup("使用方式"), regions: ["侧栏卖点"], priority: 100, enabled: true, confidence: 0.96 },
+      { text: "厂家直发", group: activeMarketingGroup("品质与渠道"), regions: ["底栏文案"], priority: 90, enabled: true, confidence: 0.99 },
     ],
   };
 }
@@ -193,9 +250,9 @@ function marketingJsonPrompt() {
 2. JSON顶层必须包含scope、category、product和items数组。
 3. 每条items必须包含text、group、regions、priority、enabled，可选confidence。
 4. text必须忠实保留参考图原文，不改写、不合并；重复文案只保留一次。
-5. group只能选择：${MARKETING_COPY_GROUPS.join("、")}。
+5. group只能选择：${activeMarketingGroups().join("、")}。
 6. regions可多选，但只能选择：${MARKETING_REGIONS.join("、")}。
-7. 产品名称/定位用“产品定位”；疾病症状用“病症营销词”；兑水拌料等用“使用方式”；动物对象用“适用对象”；圈舍环境用“使用场景”；配方、安全、效果特点用“产品特点”；净含量、用量、储存用“规格与储存”；厂家、正品、现货、物流用“品质与渠道”；完整口号用“底栏口号”；无法判断时用“其他”。
+7. 按文案语义从上面的当前可选分组中选择最贴近的一项；无法判断时使用“${activeMarketingGroup("其他")}”。
 8. priority建议1到200，越重要数值越高；enabled固定为true；confidence使用0到1。
 9. 同一文案可以有多个regions，但只能有一个group。
 
@@ -215,8 +272,7 @@ function marketingCopyKey(entry = {}) {
 async function load() {
   state.data = await api("/api/state");
   $("#data-root").textContent = state.data.dataRoot;
-  $("#marketing-bulk-group").innerHTML = MARKETING_COPY_GROUPS.map((group) => `<option>${group}</option>`).join("");
-  $("#marketing-bulk-group").value = "其他";
+  renderMarketingBulkGroupOptions();
   for (const template of state.data.templates.filter((item) => item.enabled)) state.selectedTemplates.add(template.number);
   renderAll();
   let savedView = state.view;
@@ -287,7 +343,8 @@ function renderMarketingCategoryFilters() {
 
 function productMarketingCount(product) {
   return state.data.productMarketingEntries.filter((entry) =>
-    entry.scope === "product" && entry.product === product.name && productCategories(product).includes(entry.category)
+    entry.scope === "product" && entry.product === product.name &&
+    (entry.category === "*" || productCategories(product).includes(entry.category))
   ).length;
 }
 
@@ -737,15 +794,32 @@ function renderTemplates() {
     state.templateGroup = button.dataset.templateGroup;
     renderTemplates();
   });
-  const templates = state.data.templates.filter((template) =>
+  const groupTemplates = state.data.templates.filter((template) =>
     templateInGroup(template, state.templateGroup)
   );
+  const search = state.templateSearch.trim().toLowerCase();
+  const numberRange = state.templateNumberRange.trim();
+  const templates = groupTemplates.filter((template) =>
+    (!search || [template.number, template.name, template.layout, ...(templateGroupsOf(template))]
+      .join(" ").toLowerCase().includes(search))
+    && templateNumberMatchesRange(template.number, numberRange));
+  $("#template-search").value = state.templateSearch;
+  $("#template-number-range").value = state.templateNumberRange;
+  $("#template-search").oninput = (event) => {
+    state.templateSearch = event.target.value;
+    renderTemplates();
+  };
+  $("#template-number-range").oninput = (event) => {
+    state.templateNumberRange = event.target.value;
+    renderTemplates();
+  };
   $("#select-all-templates").checked = Boolean(templates.length) && templates.every((template) => state.selectedTemplateCards.has(template.number));
   $("#select-all-templates").indeterminate = templates.some((template) => state.selectedTemplateCards.has(template.number))
     && !templates.every((template) => state.selectedTemplateCards.has(template.number));
   $("#move-template-group").innerHTML = groups.filter((group) => group !== "全部")
     .map((group) => `<option value="${group}">${group}</option>`).join("");
-  $("#selected-template-card-count").textContent = `已选 ${state.selectedTemplateCards.size} 个模板`;
+  const selectedVisibleCount = templates.filter((template) => state.selectedTemplateCards.has(template.number)).length;
+  $("#selected-template-card-count").textContent = `当前筛选 ${templates.length}/${groupTemplates.length} 套；已选 ${selectedVisibleCount} 套（全部 ${state.selectedTemplateCards.size} 套）`;
   const selectedTemplates = state.data.templates.filter((template) => state.selectedTemplateCards.has(template.number));
   $("#batch-enable-templates").disabled = !selectedTemplates.some((template) => !template.enabled);
   $("#batch-disable-templates").disabled = !selectedTemplates.some((template) => template.enabled);
@@ -795,9 +869,30 @@ function renderTemplates() {
   });
 }
 
+function generatorFilteredProducts() {
+  const search = ($("#generate-product-search")?.value || "").trim().toLowerCase();
+  return state.data.products.filter((product) =>
+    productInCategory(product, state.generateProductCategory) &&
+    (!search || product.name.toLowerCase().includes(search) || (product.tags || []).some((tag) => tag.toLowerCase().includes(search)))
+  );
+}
+
 function renderGenerator() {
-  const search = ($("#generate-product-search")?.value || "").toLowerCase();
-  const products = state.data.products.filter((item) => !search || item.name.toLowerCase().includes(search));
+  const availableProductCategories = ["全部", ...new Set(state.data.categories || [])];
+  if (!availableProductCategories.includes(state.generateProductCategory)) state.generateProductCategory = "全部";
+  const products = generatorFilteredProducts();
+  const selectedProductCount = products.filter((product) => state.selectedProducts.has(productKey(product))).length;
+  $("#generate-product-category-chips").innerHTML = availableProductCategories.map((category) => {
+    const count = category === "全部" ? state.data.products.length
+      : state.data.products.filter((product) => productInCategory(product, category)).length;
+    return `<button type="button" class="chip ${category === state.generateProductCategory ? "active" : ""}" data-generate-product-category="${category}">${category}<small>${count}</small></button>`;
+  }).join("");
+  $$("[data-generate-product-category]").forEach((button) => button.onclick = () => {
+    state.generateProductCategory = button.dataset.generateProductCategory;
+    renderGenerator();
+  });
+  $("#generate-product-filter-count").textContent = `当前显示 ${products.length} 个产品，已选 ${selectedProductCount} 个；全部共选 ${state.selectedProducts.size} 个`;
+  $("#generate-select-products").textContent = products.length && selectedProductCount === products.length ? "取消当前" : "全选当前";
   const templateGroups = ["全部", ...new Set([
     ...(state.data.templateGroups || ["未分组"]),
     ...state.data.templates.flatMap(templateGroupsOf),
@@ -834,8 +929,8 @@ function renderGenerator() {
   `).join("");
   $$("[data-g-product]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedProducts.add(input.dataset.gProduct) : state.selectedProducts.delete(input.dataset.gProduct);
-    updateSummary();
     renderProducts();
+    renderGenerator();
   });
   $$("[data-g-template]").forEach((input) => input.onchange = () => {
     input.checked ? state.selectedTemplates.add(input.dataset.gTemplate) : state.selectedTemplates.delete(input.dataset.gTemplate);
@@ -844,6 +939,7 @@ function renderGenerator() {
   });
   renderGenerationMarketingCopies();
   updateGeneratorTemplateSelectionMeta();
+  updateGenerationBackgroundControls();
 }
 
 function updateGeneratorTemplateSelectionMeta() {
@@ -960,7 +1056,8 @@ function generationMarketingEntries() {
     (entry.scope === "global" ||
       (entry.scope === "category" && categories.has(entry.category)) ||
       (entry.scope === "product" && products.some((product) =>
-        entry.product === product.name && productCategories(product).includes(entry.category))))
+        entry.product === product.name &&
+        (entry.category === "*" || productCategories(product).includes(entry.category)))))
   );
 }
 
@@ -994,15 +1091,19 @@ function renderGenerationMarketingCopies() {
 }
 
 function updateSummary() {
-  $("#summary-products").textContent = state.selectedProducts.size;
+  const baseImageOnly = $("#generation-base-image-only")?.checked;
+  $("#summary-products").textContent = baseImageOnly ? 1 : state.selectedProducts.size;
+  $("#summary-products").nextElementSibling.textContent = baseImageOnly ? "底图" : "产品";
   $("#summary-templates").textContent = state.selectedTemplates.size;
   const combined = $("#generation-mode")?.value === "combined";
-  $("#summary-total").textContent = combined
+  $("#summary-total").textContent = baseImageOnly ? state.selectedTemplates.size : combined
     ? (state.selectedProducts.size >= 2 ? state.selectedTemplates.size : 0)
     : state.selectedProducts.size * state.selectedTemplates.size;
 }
 
 function updateGenerationBackgroundControls() {
+  const baseImageOnly = $("#generation-base-image-only")?.checked;
+  const productBackgroundOnly = $("#generation-product-background-only")?.checked;
   const mode = $("#generation-background-mode")?.value || "product";
   const noteWrap = $("#generation-background-note-wrap");
   if (noteWrap) noteWrap.classList.toggle("hidden", mode !== "custom");
@@ -1011,7 +1112,15 @@ function updateGenerationBackgroundControls() {
     template: "完整保留模板原背景；仅适合模板场景与当前产品实际用途一致时使用。",
     custom: "自定义备注仅对本次生成生效；与模板原背景冲突时，以临时备注为准。",
   };
-  if ($("#generation-background-status")) $("#generation-background-status").textContent = messages[mode];
+  if ($("#generation-background-status")) $("#generation-background-status").textContent = baseImageOnly
+    ? "底图不使用产品或文案；只保留模板的环境、动物、装饰及配色。选择“自定义临时背景备注”可覆盖模板场景。"
+    : productBackgroundOnly
+      ? "保留上传产品包装的原有文字；主图不生成标题、卖点、净含量和底栏文字，相关区域保持干净留白。"
+    : messages[mode];
+  $(".generator-layout")?.classList.toggle("base-image-only", Boolean(baseImageOnly));
+  $("#generation-mode").disabled = Boolean(baseImageOnly || productBackgroundOnly);
+  $(".generation-copy-options")?.classList.toggle("hidden", Boolean(baseImageOnly || productBackgroundOnly));
+  updateSummary();
 }
 
 function fillCategorySelects() {
@@ -1123,7 +1232,7 @@ function filteredProductCopies() {
   return state.data.productMarketingEntries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.scope === filter.scope)
-    .filter(({ entry }) => filter.scope === "global" || entry.category === filter.category)
+    .filter(({ entry }) => filter.scope === "global" || entry.category === "*" || entry.category === filter.category)
     .filter(({ entry }) => filter.scope !== "product" || entry.product === filter.product)
     .filter(({ entry }) => state.marketingCopyGroup === "全部" || entry.group === state.marketingCopyGroup);
 }
@@ -1133,13 +1242,13 @@ function targetProductCopies() {
   return state.data.productMarketingEntries
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.scope === filter.scope)
-    .filter(({ entry }) => filter.scope === "global" || entry.category === filter.category)
+    .filter(({ entry }) => filter.scope === "global" || entry.category === "*" || entry.category === filter.category)
     .filter(({ entry }) => filter.scope !== "product" || entry.product === filter.product);
 }
 
 function renderMarketingGroupFilters() {
   const targetItems = targetProductCopies();
-  const groups = ["全部", ...MARKETING_COPY_GROUPS];
+  const groups = ["全部", ...activeMarketingGroups()];
   $("#marketing-copy-group-filters").innerHTML = groups.map((group) => {
     const count = group === "全部" ? targetItems.length : targetItems.filter(({ entry }) => entry.group === group).length;
     return `<button type="button" class="chip ${state.marketingCopyGroup === group ? "active" : ""}" data-marketing-copy-group="${group}">${group}<small>${count}</small></button>`;
@@ -1148,6 +1257,161 @@ function renderMarketingGroupFilters() {
     state.marketingCopyGroup = button.dataset.marketingCopyGroup;
     renderProductCopies();
   });
+}
+
+function openMarketingGroupDialog() {
+  state.marketingGroupDraft = activeMarketingGroups().map((name) => ({ original: name, name, migrateTo: "" }));
+  renderMarketingGroupDialog();
+  $("#marketing-group-dialog").showModal();
+}
+
+function renderMarketingGroupDialog() {
+  const draft = state.marketingGroupDraft || [];
+  const active = draft.filter((item) => !item.migrateTo);
+  $("#marketing-group-draft-list").innerHTML = active.map((item, index) => `
+    <div class="marketing-group-draft-row">
+      <input data-marketing-group-name="${index}" value="${escapeHtml(item.name)}" placeholder="分组名称">
+      <button type="button" class="btn ghost small" data-remove-marketing-group="${index}">删除并迁移</button>
+    </div>`).join("") || `<div class="summary-note">至少需要保留一个分组</div>`;
+  $("#marketing-group-draft-status").textContent = active.length
+    ? `当前将保留 ${active.length} 个分组。重命名后，旧 JSON 分组名会自动映射到新名称。`
+    : "请至少保留一个分组。";
+  $$('[data-marketing-group-name]').forEach((input) => input.oninput = () => {
+    const item = active[Number(input.dataset.marketingGroupName)];
+    if (item) item.name = input.value;
+  });
+  $$('[data-remove-marketing-group]').forEach((button) => button.onclick = () => {
+    const item = active[Number(button.dataset.removeMarketingGroup)];
+    const choices = active.filter((candidate) => candidate !== item).map((candidate) => candidate.name.trim()).filter(Boolean);
+    if (!choices.length) return toast("至少保留一个分组", true);
+    const target = String(window.prompt(`删除“${item.name}”后，将其已有文案迁移到哪个分组？\n可选：${choices.join("、")}`, choices[0]) || "").trim();
+    if (!choices.includes(target)) return toast("请输入列表中的迁移目标分组", true);
+    item.migrateTo = target;
+    renderMarketingGroupDialog();
+  });
+}
+
+function addMarketingGroupDraft() {
+  state.marketingGroupDraft ||= [];
+  const occupied = new Set(state.marketingGroupDraft.map((item) => item.name));
+  let name = "新分组";
+  let index = 2;
+  while (occupied.has(name)) name = `新分组${index++}`;
+  state.marketingGroupDraft.push({ original: "", name, migrateTo: "" });
+  renderMarketingGroupDialog();
+}
+
+async function saveMarketingGroups() {
+  const draft = state.marketingGroupDraft || [];
+  const active = draft.filter((item) => !item.migrateTo).map((item) => ({ ...item, name: String(item.name || "").trim() }));
+  if (!active.length) return toast("至少保留一个分组", true);
+  if (active.some((item) => !item.name || item.name === "全部" || item.name.includes("|"))) return toast("分组名称不能为空、不能为“全部”且不能包含 |", true);
+  if (new Set(active.map((item) => item.name)).size !== active.length) return toast("分组名称不能重复", true);
+  const transitions = {};
+  for (const item of draft) {
+    if (!item.original) continue;
+    const migrationTarget = active.find((candidate) => candidate.name === item.migrateTo || candidate.original === item.migrateTo)?.name;
+    const next = migrationTarget || active.find((candidate) => candidate.original === item.original)?.name;
+    if (next) transitions[item.original] = next;
+  }
+  try {
+    const result = await api("/api/marketing/groups/save", {
+      method: "POST",
+      body: JSON.stringify({ groups: active.map((item) => item.name), transitions }),
+    });
+    state.data.marketingGroups = result.marketingGroups;
+    state.data.marketingGroupAliases = result.marketingGroupAliases;
+    state.data.productMarketingEntries.forEach((entry) => {
+      if (result.transitions[entry.group]) entry.group = result.transitions[entry.group];
+    });
+    if (!activeMarketingGroups().includes(state.marketingCopyGroup)) state.marketingCopyGroup = "全部";
+    state.marketingGroupDraft = null;
+    $("#marketing-group-dialog").close();
+    renderMarketingBulkGroupOptions();
+    renderProductCopies();
+    renderMarketingProductGrid();
+    toast("营销词分组已保存；旧 JSON 分组名会自动兼容");
+  } catch (error) { toast(error.message, true); }
+}
+
+function selectedEditorMarketingItems() {
+  return state.data.productMarketingEntries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => state.selectedEditorMarketingKeys.has(marketingCopyKey(entry)));
+}
+
+function renderMarketingCopyTargets() {
+  const source = findProductByKey(state.marketingProduct);
+  const query = String($("#marketing-copy-target-search").value || "").trim().toLowerCase();
+  const categories = state.data.categories || [];
+  [...state.marketingCopyTargetCategories].forEach((category) => {
+    if (!categories.includes(category)) state.marketingCopyTargetCategories.delete(category);
+  });
+  $("#marketing-copy-target-category-chips").innerHTML = categories.map((category) => {
+    const count = state.data.products.filter((product) => productCategories(product).includes(category)).length;
+    return `<button type="button" class="chip ${state.marketingCopyTargetCategories.has(category) ? "active" : ""}" data-copy-target-category="${encodeURIComponent(category)}">${escapeHtml(category)}<small>${count}</small></button>`;
+  }).join("") || `<span class="summary-note">暂无产品分类</span>`;
+  $$('[data-copy-target-category]').forEach((button) => button.onclick = () => {
+    const category = decodeURIComponent(button.dataset.copyTargetCategory);
+    state.marketingCopyTargetCategories.has(category)
+      ? state.marketingCopyTargetCategories.delete(category)
+      : state.marketingCopyTargetCategories.add(category);
+    state.marketingCopyTargetKeys.clear();
+    renderMarketingCopyTargets();
+  });
+  const targets = state.data.products
+    .filter((product) => !source || productKey(product) !== productKey(source))
+    .filter((product) => !state.marketingCopyTargetCategories.size || productCategories(product).some((category) => state.marketingCopyTargetCategories.has(category)))
+    .filter((product) => !query || `${product.name} ${(productCategories(product) || []).join(" ")}`.toLowerCase().includes(query));
+  $("#marketing-copy-target-list").innerHTML = targets.map((product) => {
+    const key = productKey(product);
+    return `<label class="marketing-copy-target-card"><input type="checkbox" data-marketing-copy-target="${key}" ${state.marketingCopyTargetKeys.has(key) ? "checked" : ""}><span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(productCategories(product).join("、"))}</small></span></label>`;
+  }).join("") || `<div class="summary-note">没有匹配的目标产品</div>`;
+  $$('[data-marketing-copy-target]').forEach((input) => input.onchange = () => {
+    input.checked ? state.marketingCopyTargetKeys.add(input.dataset.marketingCopyTarget) : state.marketingCopyTargetKeys.delete(input.dataset.marketingCopyTarget);
+  });
+  return targets;
+}
+
+function openMarketingCopyDialog() {
+  const source = findProductByKey(state.marketingProduct);
+  const selected = selectedEditorMarketingItems().filter(({ entry }) => entry.scope === "product" && entry.product === source?.name);
+  if (!source || !selected.length) return toast("请先在当前产品文案中勾选要复制的营销词", true);
+  state.marketingCopyTargetKeys.clear();
+  state.marketingCopyTargetCategories.clear();
+  $("#marketing-copy-target-search").value = "";
+  $("#marketing-copy-dialog-summary").textContent = `将复制“${source.name}”中已勾选的 ${selected.length} 条营销词；分组、可用位置、优先级和启用状态会一并保留。`;
+  renderMarketingCopyTargets();
+  $("#marketing-copy-dialog").showModal();
+}
+
+function applySelectedMarketingCopy() {
+  const source = findProductByKey(state.marketingProduct);
+  const selected = selectedEditorMarketingItems().filter(({ entry }) => entry.scope === "product" && entry.product === source?.name);
+  const targets = state.data.products.filter((product) => state.marketingCopyTargetKeys.has(productKey(product)));
+  if (!selected.length) return toast("没有可复制的营销词", true);
+  if (!targets.length) return toast("请至少选择一个目标产品", true);
+  const existing = new Set(state.data.productMarketingEntries
+    .filter((entry) => entry.scope === "product")
+    .map((entry) => `${entry.product}\u001f${String(entry.text || "").trim().toLowerCase()}`));
+  let copied = 0;
+  let skipped = 0;
+  for (const target of targets) {
+    for (const { entry } of selected) {
+      const key = `${target.name}\u001f${String(entry.text || "").trim().toLowerCase()}`;
+      if (existing.has(key)) { skipped += 1; continue; }
+      state.data.productMarketingEntries.push({
+        ...structuredClone(entry), category: "*", product: target.name,
+        regions: [...entryRegions(entry)], region: entryRegions(entry)[0] || "不限位置",
+      });
+      existing.add(key);
+      copied += 1;
+    }
+  }
+  $("#marketing-copy-dialog").close();
+  renderMarketingProductGrid();
+  renderProductCopies();
+  toast(`已带入 ${copied} 条营销词，跳过 ${skipped} 条重复词；请点击“保存营销文案”确认`);
 }
 
 function renderProductCopies() {
@@ -1169,11 +1433,39 @@ function renderProductCopies() {
     ? `${allItems.length} 条文案`
     : `${items.length} / ${allItems.length} 条文案`;
   renderMarketingGroupFilters();
+  const visibleKeys = items.map(({ entry }) => marketingCopyKey(entry));
+  const visibleSelected = visibleKeys.filter((key) => state.selectedEditorMarketingKeys.has(key)).length;
+  const canCopyProductMarketing = filter.scope === "product" && Boolean(filter.product);
+  $("#select-visible-marketing-copies").onclick = () => {
+    visibleKeys.forEach((key) => state.selectedEditorMarketingKeys.add(key));
+    renderProductCopies();
+  };
+  $("#clear-selected-marketing-copies").onclick = () => {
+    visibleKeys.forEach((key) => state.selectedEditorMarketingKeys.delete(key));
+    renderProductCopies();
+  };
+  $("#copy-selected-marketing-copies").textContent = `复制已选（${visibleSelected}）`;
+  $("#copy-selected-marketing-copies").disabled = !canCopyProductMarketing;
+  $("#copy-selected-marketing-copies").title = canCopyProductMarketing ? "将勾选的专属营销词复制到其它产品" : "请先选择“产品专属”范围中的一个产品";
+  $("#copy-selected-marketing-copies").onclick = openMarketingCopyDialog;
+  $("#export-selected-marketing-copies").disabled = !canCopyProductMarketing;
+  $("#export-selected-marketing-copies").title = canCopyProductMarketing ? "导出勾选的专属营销词" : "请先选择“产品专属”范围中的一个产品";
+  $("#export-selected-marketing-copies").onclick = () => {
+    const source = findProductByKey(state.marketingProduct);
+    const selected = selectedEditorMarketingItems().filter(({ entry }) => entry.scope === "product" && entry.product === source?.name);
+    if (!source || !selected.length) return toast("请先勾选要导出的营销词", true);
+    downloadJson(`${source.name}-已选专属营销词.json`, {
+      scope: "product", sourceProduct: source.name,
+      items: selected.map(({ entry }) => ({ text: entry.text, group: entry.group, regions: entryRegions(entry), priority: entry.priority || 0, enabled: entry.enabled !== false })),
+    });
+    toast("已导出所选营销词 JSON");
+  };
   $("#product-copy-list").innerHTML = items.map(({ entry, index }) => `
     <div class="product-copy-row">
+      <input class="copy-select" type="checkbox" data-select-editor-copy="${encodeURIComponent(marketingCopyKey(entry))}" ${state.selectedEditorMarketingKeys.has(marketingCopyKey(entry)) ? "checked" : ""} title="选择用于复制或导出">
       <div class="copy-main-fields">
         <input data-copy-field="text" data-copy-index="${index}" value="${entry.text}" placeholder="输入营销词">
-        <label>文案分组<select data-copy-field="group" data-copy-index="${index}">${MARKETING_COPY_GROUPS.map((group) => `<option ${entry.group === group ? "selected" : ""}>${group}</option>`).join("")}</select></label>
+        <label>文案分组<select data-copy-field="group" data-copy-index="${index}">${activeMarketingGroups().map((group) => `<option ${entry.group === group ? "selected" : ""}>${group}</option>`).join("")}</select></label>
         <label>优先级<input type="number" data-copy-field="priority" data-copy-index="${index}" value="${entry.priority || 0}"></label>
         <label class="copy-enabled"><input type="checkbox" data-copy-field="enabled" data-copy-index="${index}" ${entry.enabled !== false ? "checked" : ""}>启用</label>
       </div>
@@ -1183,6 +1475,12 @@ function renderProductCopies() {
       </div>
       <button type="button" data-remove-copy="${index}">×</button>
     </div>`).join("") || `<div class="summary-note">当前范围还没有营销词，点击下方按钮添加。</div>`;
+  $$('[data-select-editor-copy]').forEach((input) => input.onchange = () => {
+    const key = decodeURIComponent(input.dataset.selectEditorCopy);
+    input.checked ? state.selectedEditorMarketingKeys.add(key) : state.selectedEditorMarketingKeys.delete(key);
+    const activeCount = visibleKeys.filter((item) => state.selectedEditorMarketingKeys.has(item)).length;
+    $("#copy-selected-marketing-copies").textContent = `复制已选（${activeCount}）`;
+  });
   $$("[data-copy-field]").forEach((input) => input.oninput = () => {
     const entry = state.data.productMarketingEntries[Number(input.dataset.copyIndex)];
     entry[input.dataset.copyField] = input.dataset.copyField === "priority" ? Number(input.value)
@@ -1262,7 +1560,7 @@ function addProductCopy() {
     product: filter.scope === "product" ? filter.product : "*",
     regions: ["侧栏卖点"],
     region: "侧栏卖点",
-    group: state.marketingCopyGroup === "全部" ? "其他" : state.marketingCopyGroup,
+    group: state.marketingCopyGroup === "全部" ? activeMarketingGroup("其他") : state.marketingCopyGroup,
     text: "",
     priority: filter.scope === "product" ? 100 : filter.scope === "category" ? 50 : 10,
     enabled: true,
@@ -1279,7 +1577,7 @@ function addBulkProductCopies() {
   if (filter.scope === "product" && !filter.product) return toast("请先选择一个产品", true);
   if (filter.scope === "category" && !filter.category) return toast("请先选择一个分类", true);
   const existing = new Set(targetProductCopies().map(({ entry }) => entry.text));
-  const group = $("#marketing-bulk-group").value || "其他";
+  const group = $("#marketing-bulk-group").value || activeMarketingGroup("其他");
   let added = 0;
   for (const text of lines) {
     if (existing.has(text)) continue;
@@ -1350,7 +1648,9 @@ async function validateMarketingJson() {
     state.marketingImportEntries = result.entries;
     const groups = Object.entries(result.summary.groups).map(([group, count]) => `${group}${count}条`).join("、");
     status.className = "json-import-status success";
-    status.textContent = `校验通过：共${result.summary.count}条，重复${result.summary.duplicateCount}条。分组：${groups || "无"}。`;
+    const skipped = result.summary.sourceDuplicateCount || 0;
+    const existed = result.summary.existingDuplicateCount || 0;
+    status.textContent = `校验通过：可导入${result.summary.count}条。${skipped ? `JSON内重复已自动跳过${skipped}条；` : ""}${existed ? `已有文案将跳过${existed}条；` : ""}分组：${groups || "无"}。`;
     $("#marketing-json-preview").innerHTML = result.entries.map((entry) => `
       <div class="marketing-json-preview-row ${entry.duplicate ? "duplicate" : ""}">
         <strong>${escapeHtml(entry.text)}</strong>
@@ -1395,7 +1695,8 @@ function applyMarketingJson() {
   renderProductCopies();
   renderMarketingProductGrid();
   $("#marketing-editor-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-  toast(`已带入${added}条营销文案，确认后请点击“保存营销文案”`);
+  const skipped = entries.length - added;
+  toast(`已带入${added}条营销文案${skipped ? `，跳过${skipped}条已有重复` : ""}；确认后请点击“保存营销文案”`);
 }
 
 function nextTemplateNumber() {
@@ -1425,18 +1726,23 @@ function updateLivePreview() {
 }
 
 async function saveTemplates() {
-  await api("/api/templates/save", { method: "POST", body: JSON.stringify({
+  const result = await api("/api/templates/save", { method: "POST", body: JSON.stringify({
     templates: state.data.templates,
     groups: state.data.templateGroups,
   }) });
-  toast("模板配置已保存");
+  toast(result.genericExclusiveCount
+    ? `模板配置已保存；${result.genericExclusiveCount} 个多分组模板已统一归入“通用”`
+    : "模板配置已保存");
   await reload();
 }
 
 function openProductDetail(key) {
   const product = findProductByKey(key);
   state.detailProduct = product;
-  $("#detail-name").textContent = product.name;
+  $("#detail-title").textContent = product.brand ? `${product.displayName || product.name} · ${product.brand}` : (product.displayName || product.name);
+  $("#detail-name").value = product.name;
+  $("#detail-display-name").value = product.displayName || product.name;
+  $("#detail-brand").value = product.brand || "";
   $("#detail-image").src = media(product.imagePath);
   $("#detail-category").value = product.category;
   $("#detail-categories").value = productCategories(product).filter((category) => category !== product.category).join("，");
@@ -1444,6 +1750,21 @@ function openProductDetail(key) {
   $("#detail-form").value = product.form;
   $("#detail-tags").value = product.tags.join(", ");
   $("#detail-prompt").textContent = product.latestPrompt ? `最新提示词：${product.latestPrompt}` : "尚未生成提示词";
+  const sameImages = state.data.products.filter((item) => item.category === product.category && item.name === product.name);
+  const keepImage = $("#detail-keep-image");
+  keepImage.innerHTML = sameImages.map((item) => `<option value="${escapeHtml(item.imageName)}">保留：${escapeHtml(item.imageName)}</option>`).join("");
+  keepImage.value = product.imageName;
+  keepImage.classList.toggle("hidden", sameImages.length < 2);
+  $("#merge-same-images").classList.toggle("hidden", sameImages.length < 2);
+  const targetProducts = state.data.products
+    .filter((item, index, all) => !(item.category === product.category && item.name === product.name)
+      && all.findIndex((other) => other.category === item.category && other.name === item.name) === index)
+    .sort((a, b) => `${a.category}/${a.name}`.localeCompare(`${b.category}/${b.name}`, "zh-CN"));
+  $("#detail-merge-target").innerHTML = `<option value="">选择目标产品（可选）</option>${targetProducts
+    .map((item) => `<option value="${escapeHtml(`${item.category}\u001f${item.name}`)}">${escapeHtml(item.name)} · ${escapeHtml(item.category)}</option>`).join("")}`;
+  $("#detail-merge").classList.toggle("hidden", !targetProducts.length);
+  $("#detail-analysis").classList.add("hidden");
+  $("#detail-analysis").textContent = "";
   $("#product-detail-dialog").showModal();
 }
 
@@ -1652,8 +1973,11 @@ $("#delete-template-group").onclick = async () => {
   try { await saveTemplates(); toast("分组已删除，原模板已移入未分组"); } catch (error) { toast(error.message, true); }
 };
 $("#select-all-templates").onchange = (event) => {
+  const search = state.templateSearch.trim().toLowerCase();
   const visible = state.data.templates.filter((template) =>
-    templateInGroup(template, state.templateGroup));
+    templateInGroup(template, state.templateGroup)
+    && (!search || [template.number, template.name, template.layout, ...templateGroupsOf(template)]
+      .join(" ").toLowerCase().includes(search)));
   visible.forEach((template) => event.target.checked
     ? state.selectedTemplateCards.add(template.number)
     : state.selectedTemplateCards.delete(template.number));
@@ -1744,6 +2068,23 @@ $("#add-bulk-product-copy").onclick = addBulkProductCopies;
 $("#open-marketing-json-import").onclick = openMarketingJsonDialog;
 $("#close-marketing-json-dialog").onclick = closeMarketingJsonDialog;
 $("#cancel-marketing-json-dialog").onclick = closeMarketingJsonDialog;
+$("#manage-marketing-groups").onclick = openMarketingGroupDialog;
+$("#close-marketing-group-dialog").onclick = () => $("#marketing-group-dialog").close();
+$("#cancel-marketing-group-dialog").onclick = () => $("#marketing-group-dialog").close();
+$("#add-marketing-group").onclick = addMarketingGroupDraft;
+$("#save-marketing-groups").onclick = saveMarketingGroups;
+$("#close-marketing-copy-dialog").onclick = () => $("#marketing-copy-dialog").close();
+$("#cancel-marketing-copy-dialog").onclick = () => $("#marketing-copy-dialog").close();
+$("#marketing-copy-target-search").oninput = renderMarketingCopyTargets;
+$("#select-all-marketing-copy-targets").onclick = () => {
+  renderMarketingCopyTargets().forEach((product) => state.marketingCopyTargetKeys.add(productKey(product)));
+  renderMarketingCopyTargets();
+};
+$("#clear-marketing-copy-targets").onclick = () => {
+  state.marketingCopyTargetKeys.clear();
+  renderMarketingCopyTargets();
+};
+$("#apply-marketing-copy").onclick = applySelectedMarketingCopy;
 $("#marketing-json-file").onchange = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -1767,11 +2108,25 @@ $("#copy-marketing-json-prompt").onclick = () => copyText(marketingJsonPrompt(),
 $("#copy-marketing-json-example").onclick = () => copyText(JSON.stringify(marketingJsonExample(), null, 2), "营销词JSON示例已复制");
 $("#validate-marketing-json").onclick = validateMarketingJson;
 $("#apply-marketing-json").onclick = applyMarketingJson;
+$("#sync-local-marketing").onclick = async () => {
+  try {
+    const preview = await api("/api/product-marketing/sync-local", { method: "POST", body: JSON.stringify({ apply: false }) });
+    if (!preview.imported) {
+      toast(`本地新营销文案已检查，没有发现可新增的文案（扫描 ${preview.files.length} 个文件）`);
+      return;
+    }
+    if (!window.confirm(`从 ${preview.files.length} 个本地“新营销文案.md”中发现 ${preview.imported} 条未录入营销词。确认追加到工作台吗？现有营销词不会被删除。`)) return;
+    const result = await api("/api/product-marketing/sync-local", { method: "POST", body: JSON.stringify({ apply: true }) });
+    await reload();
+    switchView("marketing");
+    toast(`已从本地新营销文案同步 ${result.imported} 条营销词`);
+  } catch (error) { toast(error.message, true); }
+};
 $("#save-marketing-page").onclick = async () => {
   try {
     if (state.data.productMarketingEntries.some((entry) => !entry.text.trim())) throw new Error("请填写或删除空白营销词");
     if (state.data.productMarketingEntries.some((entry) => !entryRegions(entry).length)) throw new Error("每条营销词至少需要一个位置属性");
-    if (state.data.productMarketingEntries.some((entry) => !MARKETING_COPY_GROUPS.includes(entry.group))) throw new Error("每条营销词必须选择一个有效的文案分组");
+    if (state.data.productMarketingEntries.some((entry) => !activeMarketingGroups().includes(entry.group))) throw new Error("每条营销词必须选择一个有效的文案分组");
     await api("/api/product-marketing/save", { method: "POST", body: JSON.stringify({
       entries: state.data.productMarketingEntries,
       deletedEntries: state.pendingDeletedMarketing.map((item) => item.entry),
@@ -1813,8 +2168,12 @@ $("#layout-canvas").onpointerdown = (event) => {
 };
 $("#generate-product-search").oninput = renderGenerator;
 $("#generate-select-products").onclick = () => {
-  const allSelected = state.selectedProducts.size === state.data.products.length;
-  state.selectedProducts = allSelected ? new Set() : new Set(state.data.products.map(productKey));
+  const visibleProducts = generatorFilteredProducts();
+  const allSelected = visibleProducts.length > 0 && visibleProducts.every((product) => state.selectedProducts.has(productKey(product)));
+  visibleProducts.forEach((product) => {
+    if (allSelected) state.selectedProducts.delete(productKey(product));
+    else state.selectedProducts.add(productKey(product));
+  });
   renderGenerator(); renderProducts();
 };
 $("#generate-select-templates").onclick = () => {
@@ -1840,6 +2199,14 @@ $("#generate-clear-template-group").onclick = () => {
   renderGenerator();
 };
 $("#generation-mode").onchange = updateSummary;
+$("#generation-base-image-only").onchange = (event) => {
+  if (event.target.checked) $("#generation-product-background-only").checked = false;
+  updateGenerationBackgroundControls();
+};
+$("#generation-product-background-only").onchange = (event) => {
+  if (event.target.checked) $("#generation-base-image-only").checked = false;
+  updateGenerationBackgroundControls();
+};
 $$("[data-marketing-source]").forEach((input) => input.onchange = renderGenerationMarketingCopies);
 $("#marketing-selection-mode").onchange = renderGenerationMarketingCopies;
 $("#generation-background-mode").onchange = updateGenerationBackgroundControls;
@@ -1862,6 +2229,8 @@ $("#generate-btn").onclick = async () => {
       marketingCopyKeys: [...state.selectedMarketingCopyKeys],
       backgroundMode: $("#generation-background-mode").value,
       backgroundNote: $("#generation-background-note").value.trim(),
+      baseImageOnly: $("#generation-base-image-only").checked,
+      productBackgroundOnly: $("#generation-product-background-only").checked,
     }) });
     $("#generation-result").textContent = `已生成 ${result.generated.length} 份文件\n${result.generated.join("\n")}`;
     state.lastGeneratedPaths = result.generated;
@@ -1870,20 +2239,74 @@ $("#generate-btn").onclick = async () => {
   } catch (error) { $("#generation-result").textContent = error.message; toast(error.message, true); }
 };
 $("#close-detail").onclick = () => $("#product-detail-dialog").close();
+$("#analyze-product-facts").onclick = async () => {
+  try {
+    const product = state.detailProduct;
+    const result = await api("/api/products/analyze-facts", { method: "POST", body: JSON.stringify({
+      name: product.name, category: product.category, imageName: product.imageName,
+    }) });
+    const suggestion = result.suggestion || {};
+    if (suggestion.net) $("#detail-net").value = suggestion.net;
+    if (suggestion.form && suggestion.form !== "other") $("#detail-form").value = suggestion.form;
+    const formText = { bag: "袋装", liquid: "瓶装液体", tablet: "片状", other: "其他" }[suggestion.form] || "未识别";
+    $("#detail-analysis").textContent = result.warning
+      || `识别建议（尚未保存）：净含量 ${suggestion.net || "未识别"}（${suggestion.netConfidence || "low"}），包装 ${formText}（${suggestion.formConfidence || "low"}）。请核对后点击“保存资料”。`;
+    $("#detail-analysis").classList.remove("hidden");
+  } catch (error) { toast(error.message, true); }
+};
+$("#merge-same-images").onclick = async () => {
+  try {
+    const product = state.detailProduct;
+    const keepImageName = $("#detail-keep-image").value;
+    if (!window.confirm(`将同名的其它图片移入可恢复备份，只保留 ${keepImageName}？`)) return;
+    const result = await api("/api/products/merge-images", { method: "POST", body: JSON.stringify({
+      name: product.name, category: product.category, keepImageName,
+    }) });
+    $("#product-detail-dialog").close();
+    await reload();
+    toast(`已合并 ${result.archived.length} 张同名图片，原图已备份`);
+  } catch (error) { toast(error.message, true); }
+};
+$("#merge-product").onclick = async () => {
+  try {
+    const product = state.detailProduct;
+    const value = $("#detail-merge-target").value;
+    if (!value) throw new Error("请先选择要保留的目标产品");
+    const [targetCategory, targetName] = value.split("\u001f");
+    if (!window.confirm(`将“${product.name}”合并到“${targetName}”？源产品图片会移入可恢复备份，营销词和分类资料会并入目标产品。`)) return;
+    const result = await api("/api/products/merge", { method: "POST", body: JSON.stringify({
+      sourceName: product.name, sourceCategory: product.category, targetName, targetCategory,
+    }) });
+    $("#product-detail-dialog").close();
+    await reload();
+    toast(`已合并到“${result.target}”，${result.archived.length} 个源图片已备份`);
+  } catch (error) { toast(error.message, true); }
+};
 $("#save-detail").onclick = async () => {
   try {
     const product = state.detailProduct;
     const category = $("#detail-category").value;
+    const name = $("#detail-name").value.trim();
+    if (!name) throw new Error("请填写产品名称");
+    let currentName = product.name;
+    if (name !== product.name) {
+      await api("/api/products/rename", { method: "POST", body: JSON.stringify({
+        name: product.name, newName: name, category: product.category,
+      }) });
+      currentName = name;
+    }
     await api("/api/products/tags", { method: "POST", body: JSON.stringify({
-      name: product.name, category: product.category,
+      name: currentName, category: product.category,
       net: $("#detail-net").value, form: $("#detail-form").value,
       tags: $("#detail-tags").value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
       categories: $("#detail-categories").value.split(/[,，]/).map((category) => category.trim()).filter(Boolean),
+      displayName: $("#detail-display-name").value.trim() || currentName,
+      brand: $("#detail-brand").value.trim(),
     }) });
     if (category !== product.category) {
       await api("/api/products/move", {
         method: "POST",
-        body: JSON.stringify({ name: product.name, sourceCategory: product.category, category }),
+        body: JSON.stringify({ name: currentName, sourceCategory: product.category, category }),
       });
     }
     $("#product-detail-dialog").close(); await reload(); toast("产品资料已保存");
@@ -1955,7 +2378,12 @@ $("#analyze-reference-btn").onclick = async () => {
       ? `视觉模型已生成${layerCount}个结构化图层。`
       : result.draft.analysisError ? `自动分析未完成：${result.draft.analysisError}\n已保留基础草稿，可继续手动编辑。`
       : "当前为本地基础草稿。";
-    $("#analysis-output").innerHTML = `${modeText}\n${result.draft.layout}\n\n已保存：${result.savedAs}\n\n<button class="btn small" id="use-analysis">带入模板编辑器</button>`;
+    const comparison = result.comparison;
+    const comparisonText = !comparison ? ""
+      : comparison.status === "needs-ai" ? `\n\n布局检测：${comparison.label}。${comparison.message}`
+      : comparison.status === "new" ? `\n\n布局检测：${comparison.label}（相似度 ${Math.round((comparison.score || 0) * 100)}%）。${comparison.message || ""}`
+      : `\n\n布局检测：${comparison.label}（相似度 ${Math.round((comparison.score || 0) * 100)}%），最接近模板 ${comparison.template?.number || ""} · ${comparison.template?.name || ""}。`;
+    $("#analysis-output").innerHTML = `${modeText}\n${result.draft.layout}${comparisonText}\n\n已保存：${result.savedAs}\n\n<button class="btn small" id="use-analysis">带入模板编辑器</button>`;
     $("#use-analysis").onclick = () => openTemplate(null, result.draft);
     toast("参考图已导入");
   } catch (error) { $("#analysis-output").textContent = error.message; toast(error.message, true); }

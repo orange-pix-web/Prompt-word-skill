@@ -7,13 +7,17 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   IMAGE_EXTENSIONS,
+  generateBackgroundPromptMarkdown,
   generateCombinedPromptMarkdown,
+  generateProductBackgroundPromptMarkdown,
   generatePromptMarkdown,
   latestPromptVersion,
   MARKETING_COPY_GROUPS,
   marketingRegions,
   marketingJsonToEntries,
-  nextPromptPath,
+  normalizeMarketingGroupConfig,
+  resolveMarketingGroup,
+  nextPromptPaths,
   normalizeTemplateVisualLayout,
   parseMarketing,
   parseMarketingExtras,
@@ -38,6 +42,7 @@ const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = path.resolve(process.env.PROMPT_DATA_ROOT || path.join(APP_ROOT, ".."));
 const PRODUCT_ROOT = path.join(DATA_ROOT, "产品图");
 const PRODUCT_STYLE_ROOT = path.join(PRODUCT_ROOT, "产品模板");
+const PRODUCT_BACKUP_FOLDER = "根目录图片备份";
 const TEMPLATE_FILE = path.join(DATA_ROOT, "主图模板配置", "主图模板配置.md");
 const MARKETING_FILE = path.join(DATA_ROOT, "营销文案", "主图模板营销词配置.md");
 const MARKETING_EXTRAS_FILE = path.join(DATA_ROOT, "营销文案", "扩展营销卖点配置.md");
@@ -47,11 +52,18 @@ const META_ROOT = path.join(DATA_ROOT, ".prompt-ui");
 const META_FILE = path.join(META_ROOT, "products.json");
 const LAYOUT_FILE = path.join(META_ROOT, "template-layouts.json");
 const TEMPLATE_GROUPS_FILE = path.join(META_ROOT, "template-groups.json");
+const MARKETING_GROUPS_FILE = path.join(META_ROOT, "marketing-groups.json");
 const RECYCLE_FILE = path.join(META_ROOT, "recycle-bin.json");
 const BACKUP_ROOT = path.join(META_ROOT, "backups");
+const PRODUCT_ARCHIVE_ROOT = path.join(META_ROOT, "product-file-archive");
+const PRODUCT_FACT_SCRIPT = path.join(APP_ROOT, "scripts", "analyze-product-facts.py");
+const BUNDLED_PYTHON = path.resolve(path.dirname(process.execPath), "..", "..", "python", process.platform === "win32" ? "python.exe" : "python");
+const PYTHON_BIN = process.env.PYTHON_BIN || (fsSync.existsSync(BUNDLED_PYTHON) ? BUNDLED_PYTHON : "python");
+const MARKETING_ROOT = path.join(DATA_ROOT, "营销文案");
 const REFERENCE_ROOT = path.join(DATA_ROOT, "参考图", "待分析");
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const PORT = Number(process.env.PORT || 4178);
+const GENERIC_TEMPLATE_GROUP = "通用";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -73,13 +85,30 @@ async function readJson(file, fallback) {
   }
 }
 
+function cleanMarketingGroupConfig(value) {
+  const config = normalizeMarketingGroupConfig(value || {});
+  const groups = [...new Set(config.groups.map((group) => String(group).trim()).filter(Boolean))];
+  const aliases = Object.fromEntries(Object.entries(config.aliases || {})
+    .filter(([from, to]) => from && to && from !== to));
+  return { groups, aliases };
+}
+
+function normalizeTemplateGroups(value) {
+  const groups = [...new Set((Array.isArray(value) ? value : [value || "未分组"])
+    .map((group) => String(group || "").trim()).filter(Boolean))];
+  // 一个模板只允许属于一个分组；同时挂到多个产品的可复用模板统一归入“通用”，
+  // 避免它在多个产品筛选项里重复出现。
+  if (groups.includes(GENERIC_TEMPLATE_GROUP) || groups.length > 1) return [GENERIC_TEMPLATE_GROUP];
+  return groups.length ? groups : ["未分组"];
+}
+
 async function saveMeta(meta) {
   await fs.mkdir(META_ROOT, { recursive: true });
   await fs.writeFile(META_FILE, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
 
 function promptVersionFromName(fileName) {
-  const match = /-生图提示词(?:-v(\d+))?\.md$/i.exec(fileName);
+  const match = /-(?:生图提示词|组合主图提示词)(?:-v(\d+))?(?:-第\d+组)?\.md$/i.exec(fileName);
   return match ? Number(match[1] || 1) : null;
 }
 
@@ -137,7 +166,7 @@ async function addRecycleItems(items) {
 }
 
 async function loadState() {
-  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts, templateGroups, recycleBin] = await Promise.all([
+  const [templateText, marketingText, marketingExtrasText, productMarketingText, scriptText, meta, layouts, templateGroups, marketingGroups, recycleBin] = await Promise.all([
     fs.readFile(TEMPLATE_FILE, "utf8"),
     fs.readFile(MARKETING_FILE, "utf8"),
     fs.readFile(MARKETING_EXTRAS_FILE, "utf8").catch(() => ""),
@@ -146,15 +175,16 @@ async function loadState() {
     readJson(META_FILE, { products: {} }),
     readJson(LAYOUT_FILE, {}),
     readJson(TEMPLATE_GROUPS_FILE, {}),
+    readJson(MARKETING_GROUPS_FILE, { groups: MARKETING_COPY_GROUPS, aliases: {} }),
     readRecycleBin(),
   ]);
+  const marketingGroupConfig = cleanMarketingGroupConfig(marketingGroups);
   const groupAssignments = templateGroups.assignments && typeof templateGroups.assignments === "object"
     ? templateGroups.assignments : templateGroups;
   const savedGroups = Array.isArray(templateGroups.groups) ? templateGroups.groups : [];
   const templates = parseTemplates(templateText).map((template) => {
     const assignment = groupAssignments[template.number];
-    const groups = [...new Set((Array.isArray(assignment) ? assignment : [assignment || "未分组"])
-      .map((group) => String(group).trim()).filter(Boolean))];
+    const groups = normalizeTemplateGroups(assignment);
     return {
       ...template,
       group: groups[0] || "未分组",
@@ -168,10 +198,10 @@ async function loadState() {
     ...templates.flatMap((template) => template.groups),
   ].map((group) => group.trim()).filter(Boolean))];
   const marketing = mergeMarketingExtras(parseMarketing(marketingText), parseMarketingExtras(marketingExtrasText));
-  const productMarketingEntries = parseProductMarketing(productMarketingText);
+  const productMarketingEntries = parseProductMarketing(productMarketingText, marketingGroupConfig);
   const facts = parseProductFacts(scriptText);
   const categoryEntries = (await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && entry.name !== "产品模板");
+    .filter((entry) => entry.isDirectory() && !["产品模板", PRODUCT_BACKUP_FOLDER].includes(entry.name));
   const styleEntries = await fs.readdir(PRODUCT_STYLE_ROOT, { withFileTypes: true }).catch(() => []);
   const productStyles = await Promise.all(styleEntries
     .filter((entry) => entry.isFile() && IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
@@ -195,7 +225,7 @@ async function loadState() {
       const stats = await fs.stat(path.join(categoryPath, imageName));
       const latest = latestPromptVersion(files, name);
       const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const promptPattern = new RegExp(`^${escapedName}-生图提示词(?:-v(\\d+))?\\.md$`, "i");
+      const promptPattern = new RegExp(`^${escapedName}-生图提示词(?:-v(\\d+))?(?:-第\\d+组)?\\.md$`, "i");
       const promptFiles = files.filter((file) => promptPattern.test(file));
       for (const promptFile of promptFiles) {
         const promptPath = path.join(categoryPath, promptFile);
@@ -227,6 +257,8 @@ async function loadState() {
         form: fact.form || "other",
         tags: fact.tags || [],
         categories: productCategories({ category: categoryEntry.name, categories: fact.categories }),
+        displayName: fact.displayName || name,
+        brand: fact.brand || "",
         latestPrompt: latest?.name || null,
         promptVersion: latest?.version || 0,
       });
@@ -240,8 +272,8 @@ async function loadState() {
     const promptStats = await fs.stat(promptPath);
     const fileName = path.basename(promptPath);
     const productName = fileName
-      .replace(/-组合主图提示词-\d+\.md$/i, "")
-      .replace(/-生图提示词(?:-v\d+)?\.md$/i, "");
+      .replace(/-组合主图提示词(?:-v\d+)?(?:-第\d+组)?\.md$/i, "")
+      .replace(/-生图提示词(?:-v\d+)?(?:-第\d+组)?\.md$/i, "");
     prompts.push({
       fileName,
       productName,
@@ -266,6 +298,8 @@ async function loadState() {
     templateGroups: templateGroupList,
     productStyles,
     productMarketingEntries,
+    marketingGroups: marketingGroupConfig.groups,
+    marketingGroupAliases: marketingGroupConfig.aliases,
     recycleBin,
     marketingCoverage: Object.fromEntries([...marketing].map(([group, rows]) => [group, rows.size])),
     marketingRows: [...marketing].flatMap(([category, rows]) => [...rows].map(([number, copy]) => ({
@@ -299,7 +333,7 @@ function decodeDataUrl(dataUrl) {
 
 async function apiCreateCategory(body) {
   const name = String(body.name || "").trim();
-  if (!name || /[\\/:*?"<>|]/.test(name)) throw new Error("分类名称无效");
+  if (!name || ["产品模板", PRODUCT_BACKUP_FOLDER].includes(name) || /[\\/:*?"<>|]/.test(name)) throw new Error("分类名称无效");
   const target = safeChildPath(PRODUCT_ROOT, name);
   await fs.mkdir(target, { recursive: false });
   return { ok: true };
@@ -324,6 +358,8 @@ async function apiAddProduct(body) {
     form: body.form || "other",
     tags: body.tags || [],
     categories: productCategories({ category, categories: body.categories }),
+    displayName: String(body.displayName || name).trim() || name,
+    brand: String(body.brand || "").trim(),
   };
   await saveMeta(meta);
   return { ok: true };
@@ -342,7 +378,9 @@ async function apiMoveProduct(body) {
   const sourceFolder = path.join(PRODUCT_ROOT, product.category);
   const targetFolder = path.join(PRODUCT_ROOT, targetCategory);
   const files = await fs.readdir(sourceFolder);
-  const related = files.filter((file) => file === product.imageName || file.startsWith(`${name}-生图提示词`));
+  // Move every image variant of the same product name together. Otherwise a
+  // JPG/PNG duplicate could be split across categories by a single move.
+  const related = files.filter((file) => sameProductFile(file, name));
   for (const file of related) {
     const target = path.join(targetFolder, file);
     if (fsSync.existsSync(target)) throw new Error(`目标分类已有同名文件：${file}`);
@@ -371,14 +409,277 @@ async function apiSaveTags(body) {
     form: body.form || current.form || "other",
     tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
     categories: productCategories({ category: body.category, categories: body.categories || current.categories }),
+    displayName: String(body.displayName || current.displayName || body.name).trim() || body.name,
+    brand: String(body.brand ?? current.brand ?? "").trim(),
   };
   await saveMeta(meta);
   return { ok: true };
 }
 
+function fileStamp() {
+  return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+}
+
+function sameProductFile(file, name) {
+  const base = path.basename(file, path.extname(file));
+  return base === name || file.startsWith(`${name}-生图提示词`);
+}
+
+async function archiveProductFiles(category, name, files, reason) {
+  if (!files.length) return [];
+  const sourceFolder = safeChildPath(PRODUCT_ROOT, category);
+  const destination = path.join(PRODUCT_ARCHIVE_ROOT, fileStamp(), reason, category, name);
+  await fs.mkdir(destination, { recursive: true });
+  const archived = [];
+  for (const file of files) {
+    const source = path.join(sourceFolder, file);
+    if (!fsSync.existsSync(source)) continue;
+    await fs.rename(source, path.join(destination, file));
+    archived.push(path.relative(DATA_ROOT, path.join(destination, file)).replaceAll("\\", "/"));
+  }
+  return archived;
+}
+
+function normalizeCopyText(value) {
+  return String(value || "").replace(/[\s　]+/g, "").toLocaleLowerCase("zh-CN");
+}
+
+function mergeMarketingForProduct(entries, sourceName, targetName) {
+  const next = entries.map((entry) => entry.scope === "product" && entry.product === sourceName
+    ? { ...entry, product: targetName }
+    : { ...entry });
+  const seen = new Map();
+  return next.filter((entry) => {
+    const key = [entry.scope, entry.category || "", entry.product || "", normalizeCopyText(entry.text)].join("\u001f");
+    const previous = seen.get(key);
+    if (!previous) {
+      seen.set(key, entry);
+      return true;
+    }
+    const regions = [...new Set([...(previous.regions || []), ...(entry.regions || [])])];
+    previous.regions = regions;
+    previous.region = regions[0] || previous.region;
+    previous.priority = Math.max(Number(previous.priority || 0), Number(entry.priority || 0));
+    previous.enabled = previous.enabled !== false || entry.enabled !== false;
+    return false;
+  });
+}
+
+async function replaceTemplateGroupName(sourceName, targetName) {
+  const config = await readJson(TEMPLATE_GROUPS_FILE, {});
+  const assignments = config.assignments && typeof config.assignments === "object" ? config.assignments : config;
+  let changed = false;
+  for (const [number, assigned] of Object.entries(assignments)) {
+    const groups = Array.isArray(assigned) ? assigned : [assigned];
+    const replaced = [...new Set(groups.map((group) => group === sourceName ? targetName : group))];
+    if (JSON.stringify(replaced) !== JSON.stringify(groups)) {
+      assignments[number] = replaced;
+      changed = true;
+    }
+  }
+  if (changed) {
+    const next = config.assignments ? { ...config, assignments } : assignments;
+    await backupFile(TEMPLATE_GROUPS_FILE, "template-groups.json");
+    await fs.writeFile(TEMPLATE_GROUPS_FILE, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  }
+  return changed;
+}
+
+async function saveMigratedMarketing(entries, state) {
+  await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
+  await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(entries, {
+    groups: state.marketingGroups,
+    aliases: state.marketingGroupAliases,
+  }), "utf8");
+}
+
+async function apiRenameProduct(body) {
+  const oldName = String(body.name || "").trim();
+  const newName = String(body.newName || "").trim();
+  const category = String(body.category || "").trim();
+  if (!oldName || !newName || !category || /[\\/:*?"<>|]/.test(newName)) throw new Error("产品名称无效");
+  if (oldName === newName) return { ok: true, renamed: 0 };
+  const state = await loadState();
+  const matches = state.products.filter((item) => item.name === oldName && item.category === category);
+  if (!matches.length) throw new Error("找不到要改名的产品");
+  if (state.products.some((item) => item.name === newName && item.category === category)) {
+    throw new Error("同一分类下已存在该产品名，请使用“合并到已有产品”");
+  }
+  const folder = safeChildPath(PRODUCT_ROOT, category);
+  const files = await fs.readdir(folder);
+  const related = files.filter((file) => sameProductFile(file, oldName));
+  const renamed = related.map((file) => file === oldName + path.extname(file)
+    ? newName + path.extname(file)
+    : `${newName}${file.slice(oldName.length)}`);
+  if (renamed.some((file) => fsSync.existsSync(path.join(folder, file)))) throw new Error("目标名称的文件已存在");
+  for (let index = 0; index < related.length; index += 1) {
+    await fs.rename(path.join(folder, related[index]), path.join(folder, renamed[index]));
+  }
+  const meta = await readJson(META_FILE, { products: {} });
+  const sourceKey = productSelectionKey({ category, name: oldName });
+  const targetKey = productSelectionKey({ category, name: newName });
+  if (meta.products[sourceKey]) {
+    meta.products[targetKey] = meta.products[sourceKey];
+    delete meta.products[sourceKey];
+    await saveMeta(meta);
+  }
+  await saveMigratedMarketing(mergeMarketingForProduct(state.productMarketingEntries, oldName, newName), state);
+  await replaceTemplateGroupName(oldName, newName);
+  return { ok: true, renamed: related.length, name: newName };
+}
+
+async function apiMergeProductImages(body) {
+  const name = String(body.name || "").trim();
+  const category = String(body.category || "").trim();
+  const keepImageName = String(body.keepImageName || "").trim();
+  const state = await loadState();
+  const matches = state.products.filter((item) => item.name === name && item.category === category);
+  if (matches.length < 2) throw new Error("该产品没有可合并的同名图片");
+  const keep = matches.find((item) => item.imageName === keepImageName) || matches[0];
+  const archived = await archiveProductFiles(category, name,
+    matches.filter((item) => item.imageName !== keep.imageName).map((item) => item.imageName), "同名图片合并");
+  return { ok: true, keepImageName: keep.imageName, archived };
+}
+
+async function apiMergeProducts(body) {
+  const sourceName = String(body.sourceName || "").trim();
+  const sourceCategory = String(body.sourceCategory || "").trim();
+  const targetName = String(body.targetName || "").trim();
+  const targetCategory = String(body.targetCategory || "").trim();
+  if (!sourceName || !targetName || !sourceCategory || !targetCategory) throw new Error("请选择源产品和目标产品");
+  if (sourceName === targetName && sourceCategory === targetCategory) throw new Error("不能合并到自身");
+  const state = await loadState();
+  const source = state.products.filter((item) => item.name === sourceName && item.category === sourceCategory);
+  const target = state.products.filter((item) => item.name === targetName && item.category === targetCategory);
+  if (!source.length || !target.length) throw new Error("源产品或目标产品不存在");
+  const archived = await archiveProductFiles(sourceCategory, sourceName,
+    source.map((item) => item.imageName), "产品合并");
+  const meta = await readJson(META_FILE, { products: {} });
+  const sourceKey = productSelectionKey({ category: sourceCategory, name: sourceName });
+  const targetKey = productSelectionKey({ category: targetCategory, name: targetName });
+  const sourceMeta = meta.products[sourceKey] || {};
+  const targetMeta = meta.products[targetKey] || {};
+  meta.products[targetKey] = {
+    ...sourceMeta,
+    ...targetMeta,
+    net: targetMeta.net && targetMeta.net !== "待填写" ? targetMeta.net : sourceMeta.net,
+    form: targetMeta.form && targetMeta.form !== "other" ? targetMeta.form : sourceMeta.form,
+    tags: [...new Set([...(sourceMeta.tags || []), ...(targetMeta.tags || [])])],
+    categories: [...new Set([...(sourceMeta.categories || []), ...(targetMeta.categories || [])])],
+  };
+  delete meta.products[sourceKey];
+  await saveMeta(meta);
+  await saveMigratedMarketing(mergeMarketingForProduct(state.productMarketingEntries, sourceName, targetName), state);
+  await replaceTemplateGroupName(sourceName, targetName);
+  return { ok: true, archived, target: targetName };
+}
+
+function runCommand(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.trim() || `${command} exited with ${code}`)));
+  });
+}
+
+async function apiAnalyzeProductFacts(body) {
+  const category = String(body.category || "").trim();
+  const name = String(body.name || "").trim();
+  const imageName = String(body.imageName || "").trim();
+  const state = await loadState();
+  const product = state.products.find((item) => item.category === category && item.name === name && item.imageName === imageName)
+    || state.products.find((item) => item.category === category && item.name === name);
+  if (!product) throw new Error("找不到产品图片");
+  const absoluteImage = safeChildPath(PRODUCT_ROOT, path.join(product.category, product.imageName));
+  try {
+    const stdout = await runCommand(PYTHON_BIN, [PRODUCT_FACT_SCRIPT, absoluteImage]);
+    const suggestion = JSON.parse(stdout.trim());
+    return { ok: true, suggestion };
+  } catch (error) {
+    // A transparent failure is safer than guessing. The UI still allows manual entry.
+    return {
+      ok: true,
+      suggestion: { net: "", form: "other", netConfidence: "low", formConfidence: "low", ocrText: [] },
+      warning: `未能完成本地识别：${error.message}`,
+    };
+  }
+}
+
+function localCopyEntriesFromMarkdown(text, product, groups, categories) {
+  const validRegions = new Set(["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"]);
+  const knownCategories = new Set(categories);
+  const rows = [];
+  let scopeHint = "product";
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^#{1,4}\s*/.test(line)) {
+      scopeHint = /分类通用/.test(line) ? "category" : /专属/.test(line) ? "product" : scopeHint;
+      continue;
+    }
+    const match = /^[-*]\s*\[([^|｜\]]+)[|｜]([^|｜\]]+)[|｜]([^\]]+)]\s*(.+)$/.exec(line);
+    if (!match) continue;
+    const first = match[1].trim();
+    const second = match[2].trim();
+    const third = match[3].trim();
+    const oldSchema = validRegions.has(first);
+    const regions = (oldSchema ? first : third).split(/[、,，]/).map((item) => item.trim()).filter((item) => validRegions.has(item));
+    const groupName = oldSchema ? second : second;
+    const group = groups.includes(groupName) ? groupName : (groups.includes("其他") ? "其他" : groups[0]);
+    const value = match[4].trim();
+    if (!value || !regions.length) continue;
+    const category = oldSchema ? "*" : first;
+    const scope = scopeHint === "category" && knownCategories.has(category) ? "category" : "product";
+    rows.push({
+      scope, category: scope === "category" ? category : "*", product: scope === "product" ? product : "*", group, regions,
+      region: regions[0], text: value, priority: 100, enabled: true,
+    });
+  }
+  return rows;
+}
+
+async function apiSyncLocalProductMarketing(body) {
+  const state = await loadState();
+  const knownProducts = new Set(state.products.map((item) => item.name));
+  const productDirectories = await fs.readdir(MARKETING_ROOT, { withFileTypes: true }).catch(() => []);
+  const candidates = [];
+  for (const directory of productDirectories.filter((entry) => entry.isDirectory() && knownProducts.has(entry.name))) {
+    const folder = path.join(MARKETING_ROOT, directory.name);
+    const files = await fs.readdir(folder).catch(() => []);
+    for (const file of files.filter((item) => /-新营销文案(?:-v\d+)?\.md$/i.test(item))) {
+      const filePath = path.join(folder, file);
+      candidates.push(...localCopyEntriesFromMarkdown(await fs.readFile(filePath, "utf8"), directory.name, state.marketingGroups, state.categories)
+        .map((entry) => ({ ...entry, sourceFile: path.relative(DATA_ROOT, filePath).replaceAll("\\", "/") })));
+    }
+  }
+  const existing = new Set(state.productMarketingEntries.map((entry) =>
+    [entry.scope, entry.category || "", entry.product || "", normalizeCopyText(entry.text)].join("\u001f")));
+  const unique = [];
+  const seen = new Set();
+  for (const entry of candidates) {
+    const key = [entry.scope, entry.category, entry.product, normalizeCopyText(entry.text)].join("\u001f");
+    if (!existing.has(key) && !seen.has(key)) { seen.add(key); unique.push(entry); }
+  }
+  if (body.apply) {
+    await saveMigratedMarketing([...state.productMarketingEntries, ...unique], state);
+  }
+  return {
+    ok: true,
+    applied: Boolean(body.apply),
+    total: candidates.length,
+    imported: unique.length,
+    entries: unique,
+    files: [...new Set(candidates.map((entry) => entry.sourceFile))],
+  };
+}
+
 async function apiSaveTemplates(body) {
   if (!Array.isArray(body.templates)) throw new Error("模板数据无效");
   const numbers = new Set();
+  let genericExclusiveCount = 0;
   for (const template of body.templates) {
     if (!/^\d{2,4}$/.test(template.number)) throw new Error("模板编号必须是2至4位数字");
     if (numbers.has(template.number)) throw new Error(`模板编号重复：${template.number}`);
@@ -387,8 +688,10 @@ async function apiSaveTemplates(body) {
       throw new Error(`模板${template.number}中检测到连续问号，可能发生中文编码损坏，已停止保存。请刷新数据后重试`);
     }
     if (String(template.layout).includes("|")) throw new Error("模板内容不能使用英文竖线");
-    const groups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group])
+    const inputGroups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group])
       .map((group) => String(group || "").trim()).filter(Boolean))];
+    const groups = normalizeTemplateGroups(inputGroups);
+    if (inputGroups.length > 1) genericExclusiveCount += 1;
     if (groups.includes("全部")) throw new Error("“全部”是筛选项，不能作为模板分组名称");
     template.groups = groups.length ? groups : ["未分组"];
     template.group = template.groups[0];
@@ -410,9 +713,7 @@ async function apiSaveTemplates(body) {
   await fs.writeFile(LAYOUT_FILE, `${JSON.stringify(layouts, null, 2)}\n`, "utf8");
   const groupAssignments = Object.fromEntries(body.templates
     .map((template) => {
-      const groups = [...new Set((Array.isArray(template.groups) ? template.groups : [template.group || "未分组"])
-        .map((group) => String(group).trim()).filter(Boolean))];
-      return [template.number, groups.length ? groups : ["未分组"]];
+      return [template.number, normalizeTemplateGroups(template.groups || template.group)];
     }));
   const templateGroups = [...new Set([
     "未分组",
@@ -429,13 +730,13 @@ async function apiSaveTemplates(body) {
     label: `模板${item.templateNumber}｜${item.box?.label || item.key}`,
     data: item,
   })));
-  return { ok: true };
+  return { ok: true, genericExclusiveCount };
 }
 
 async function apiSaveMarketing(body) {
   if (!Array.isArray(body.rows)) throw new Error("营销文案数据无效");
   const knownCategories = new Set((await fs.readdir(PRODUCT_ROOT, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && entry.name !== "产品模板").map((entry) => entry.name));
+    .filter((entry) => entry.isDirectory() && !["产品模板", PRODUCT_BACKUP_FOLDER].includes(entry.name)).map((entry) => entry.name));
   const knownTemplates = new Set(parseTemplates(await fs.readFile(TEMPLATE_FILE, "utf8")).map((item) => item.number));
   const seen = new Set();
   for (const row of body.rows) {
@@ -461,7 +762,7 @@ async function apiSaveProductMarketing(body) {
   const categories = new Set(state.categories);
   const validScopes = new Set(["global", "category", "product"]);
   const validRegions = new Set(["顶部卖点", "侧栏卖点", "底部卖点", "副标题", "辅助文案", "底栏文案", "不限位置"]);
-  const validGroups = new Set(MARKETING_COPY_GROUPS);
+  const validGroups = new Set(state.marketingGroups);
   for (const entry of body.entries) {
     if (!validScopes.has(entry.scope)) throw new Error("营销词作用范围无效");
     if (!validGroups.has(entry.group)) throw new Error(`未知文案分组：${entry.group || "未分组"}`);
@@ -475,7 +776,10 @@ async function apiSaveProductMarketing(body) {
     if (entry.scope === "product" && !productNames.has(entry.product)) throw new Error(`未知产品：${entry.product}`);
   }
   await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
-  await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(body.entries), "utf8");
+  await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(body.entries, {
+    groups: state.marketingGroups,
+    aliases: state.marketingGroupAliases,
+  }), "utf8");
   const deletedEntries = Array.isArray(body.deletedEntries) ? body.deletedEntries : [];
   await addRecycleItems(deletedEntries.map((entry) => ({
     type: "marketing-copy",
@@ -485,12 +789,61 @@ async function apiSaveProductMarketing(body) {
   return { ok: true };
 }
 
+async function apiSaveMarketingGroups(body) {
+  const state = await loadState();
+  const groups = [...new Set((Array.isArray(body.groups) ? body.groups : [])
+    .map((group) => String(group || "").trim())
+    .filter(Boolean))];
+  if (!groups.length) throw new Error("至少保留一个营销词分组");
+  if (groups.some((group) => group === "全部" || group.includes("|"))) {
+    throw new Error("分组名称不能是“全部”或包含英文半角竖线");
+  }
+  const transitions = Object.fromEntries(Object.entries(body.transitions || {})
+    .map(([from, to]) => [String(from || "").trim(), String(to || "").trim()])
+    .filter(([from, to]) => from && to));
+  const fallback = groups.includes("其他") ? "其他" : groups[0];
+  const resolveTransition = (value) => {
+    let resolved = String(value || "").trim();
+    const visited = new Set();
+    while (transitions[resolved] && !visited.has(resolved)) {
+      visited.add(resolved);
+      resolved = transitions[resolved];
+    }
+    return groups.includes(resolved) ? resolved : fallback;
+  };
+  const nextAliases = { ...state.marketingGroupAliases };
+  for (const [from, to] of Object.entries(nextAliases)) nextAliases[from] = resolveTransition(to);
+  for (const oldGroup of state.marketingGroups) {
+    const nextGroup = resolveTransition(transitions[oldGroup] || oldGroup);
+    if (oldGroup !== nextGroup) nextAliases[oldGroup] = nextGroup;
+  }
+  for (const group of groups) delete nextAliases[group];
+  const groupConfig = cleanMarketingGroupConfig({ groups, aliases: nextAliases });
+  const migrated = state.productMarketingEntries.map((entry) => ({
+    ...entry,
+    group: resolveTransition(resolveMarketingGroup(entry.group, {
+      groups: state.marketingGroups,
+      aliases: state.marketingGroupAliases,
+    }) || entry.group),
+  }));
+  await backupFile(MARKETING_GROUPS_FILE, "marketing-groups.json");
+  await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
+  await fs.mkdir(META_ROOT, { recursive: true });
+  await fs.writeFile(MARKETING_GROUPS_FILE, `${JSON.stringify(groupConfig, null, 2)}\n`, "utf8");
+  await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(migrated, groupConfig), "utf8");
+  const appliedTransitions = Object.fromEntries(state.marketingGroups.map((group) => [group, resolveTransition(group)]));
+  return { ok: true, marketingGroups: groupConfig.groups, marketingGroupAliases: groupConfig.aliases, transitions: appliedTransitions };
+}
+
 async function apiRestoreRecycle(body) {
   const entries = await readRecycleBin();
   const item = entries.find((entry) => entry.id === body.id);
   if (!item) throw new Error("回收站项目不存在或已过期");
   if (item.type === "marketing-copy") {
-    const current = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8").catch(() => ""));
+    const groupConfig = cleanMarketingGroupConfig(await readJson(MARKETING_GROUPS_FILE, {
+      groups: MARKETING_COPY_GROUPS, aliases: {},
+    }));
+    const current = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8").catch(() => ""), groupConfig);
     const restored = item.data?.entry;
     if (!restored) throw new Error("回收站营销词数据损坏");
     const duplicate = current.some((entry) =>
@@ -499,7 +852,7 @@ async function apiRestoreRecycle(body) {
     if (!duplicate) {
       await backupFile(PRODUCT_MARKETING_FILE, "产品营销词配置.md");
       current.push(restored);
-      await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(current), "utf8");
+      await fs.writeFile(PRODUCT_MARKETING_FILE, serializeProductMarketing(current, groupConfig), "utf8");
     }
   } else if (item.type === "template-element") {
     const { templateNumber, key, box } = item.data || {};
@@ -554,6 +907,48 @@ async function apiGeneratePrompts(body) {
   const selectedTemplates = new Set(body.templates || []);
   const templates = state.templates.filter((item) => selectedTemplates.has(item.number));
   if (!templates.length) throw new Error("请至少选择一个模板");
+  const generated = [];
+  const templatesPerFile = 10;
+  const templateGroups = Array.from({ length: Math.ceil(templates.length / templatesPerFile) }, (_, index) =>
+    templates.slice(index * templatesPerFile, (index + 1) * templatesPerFile));
+  const baseImageOnly = body.baseImageOnly === true;
+  if (baseImageOnly) {
+    const baseRoot = path.join(DATA_ROOT, "生图提示词", "底图");
+    await fs.mkdir(baseRoot, { recursive: true });
+    const targets = await nextPromptPaths(baseRoot, "无产品底图", templateGroups.length, "生图提示词");
+    for (const [index, templateGroup] of templateGroups.entries()) {
+      const markdown = generateBackgroundPromptMarkdown({
+        templates: templateGroup,
+        backgroundMode,
+        backgroundNote,
+        knownProductNames,
+      });
+      await fs.writeFile(targets[index], markdown, "utf8");
+      generated.push(path.relative(DATA_ROOT, targets[index]).replaceAll("\\", "/"));
+    }
+    return { ok: true, generated, baseImageOnly: true };
+  }
+  const productBackgroundOnly = body.productBackgroundOnly === true;
+  if (productBackgroundOnly) {
+    const chosenProducts = selectProductsByKeys(state.products, [...selectedProducts]);
+    if (!chosenProducts.length) throw new Error("产品＋背景模式请至少选择一个产品");
+    for (const product of chosenProducts) {
+      const productFolder = path.join(PRODUCT_ROOT, product.category);
+      const targets = await nextPromptPaths(productFolder, product.name, templateGroups.length, "无文案产品图提示词");
+      for (const [index, templateGroup] of templateGroups.entries()) {
+        const markdown = generateProductBackgroundPromptMarkdown({
+          product,
+          templates: templateGroup,
+          backgroundMode,
+          backgroundNote,
+          knownProductNames,
+        });
+        await fs.writeFile(targets[index], markdown, "utf8");
+        generated.push(path.relative(DATA_ROOT, targets[index]).replaceAll("\\", "/"));
+      }
+    }
+    return { ok: true, generated, productBackgroundOnly: true };
+  }
   const productMarketing = parseProductMarketing(await fs.readFile(PRODUCT_MARKETING_FILE, "utf8"));
   const validSources = new Set(["product", "category", "global"]);
   const selectedSources = new Set(Array.isArray(body.marketingSources)
@@ -568,42 +963,48 @@ async function apiGeneratePrompts(body) {
     mode: manualCopies ? "selected" : "auto",
     copyKeys: [...selectedCopyKeys],
   });
-  const generated = [];
   const chosenProducts = selectProductsByKeys(state.products, [...selectedProducts]);
   if (body.mode === "combined") {
     if (chosenProducts.length < 2) throw new Error("多产品组合模式请至少选择两个产品");
-    const combinedRows = new Map(templates.map((template) => [
-      template.number, resolveCheckedMarketing(availableMarketing, chosenProducts[0], template),
-    ]));
-    const markdown = generateCombinedPromptMarkdown({
-      products: chosenProducts, templates,
-      marketingByCategory: new Map([[chosenProducts[0].category, combinedRows]]),
-      backgroundMode,
-      backgroundNote,
-      knownProductNames,
-    });
     const combinedRoot = path.join(DATA_ROOT, "生图提示词", "多产品组合");
     await fs.mkdir(combinedRoot, { recursive: true });
     const safeName = chosenProducts.map((item) => item.name).join("＋").slice(0, 80);
-    const target = path.join(combinedRoot, `${safeName}-组合主图提示词-${Date.now()}.md`);
-    await fs.writeFile(target, markdown, "utf8");
-    return { ok: true, generated: [path.relative(DATA_ROOT, target).replaceAll("\\", "/")] };
+    const targets = await nextPromptPaths(combinedRoot, safeName, templateGroups.length, "组合主图提示词");
+    for (const [index, templateGroup] of templateGroups.entries()) {
+      const combinedRows = new Map(templateGroup.map((template) => [
+        template.number, resolveCheckedMarketing(availableMarketing, chosenProducts[0], template),
+      ]));
+      const markdown = generateCombinedPromptMarkdown({
+        products: chosenProducts,
+        templates: templateGroup,
+        marketingByCategory: new Map([[chosenProducts[0].category, combinedRows]]),
+        backgroundMode,
+        backgroundNote,
+        knownProductNames,
+      });
+      await fs.writeFile(targets[index], markdown, "utf8");
+      generated.push(path.relative(DATA_ROOT, targets[index]).replaceAll("\\", "/"));
+    }
+    return { ok: true, generated };
   }
   for (const product of chosenProducts) {
-    const rows = new Map(templates.map((template) => [
-      template.number, resolveCheckedMarketing(availableMarketing, product, template),
-    ]));
-    const markdown = generatePromptMarkdown({
-      product,
-      templates,
-      marketingRows: rows,
-      backgroundMode,
-      backgroundNote,
-      knownProductNames,
-    });
-    const target = await nextPromptPath(path.join(PRODUCT_ROOT, product.category), product.name);
-    await fs.writeFile(target, markdown, "utf8");
-    generated.push(path.relative(DATA_ROOT, target).replaceAll("\\", "/"));
+    const productFolder = path.join(PRODUCT_ROOT, product.category);
+    const targets = await nextPromptPaths(productFolder, product.name, templateGroups.length);
+    for (const [index, templateGroup] of templateGroups.entries()) {
+      const rows = new Map(templateGroup.map((template) => [
+        template.number, resolveCheckedMarketing(availableMarketing, product, template),
+      ]));
+      const markdown = generatePromptMarkdown({
+        product,
+        templates: templateGroup,
+        marketingRows: rows,
+        backgroundMode,
+        backgroundNote,
+        knownProductNames,
+      });
+      await fs.writeFile(targets[index], markdown, "utf8");
+      generated.push(path.relative(DATA_ROOT, targets[index]).replaceAll("\\", "/"));
+    }
   }
   if (!generated.length) throw new Error("请至少选择一个产品");
   return { ok: true, generated };
@@ -618,6 +1019,53 @@ async function apiOpenFolder(body) {
   const child = spawn("explorer.exe", args, { detached: true, stdio: "ignore", windowsHide: false });
   child.unref();
   return { ok: true };
+}
+
+function referenceBoxSignature(box) {
+  return [
+    box.type || "", box.binding || "", box.copyRegion || "", box.shape || "none",
+    Number(box.x || 0), Number(box.y || 0), Number(box.w || 0), Number(box.h || 0),
+  ].join("|");
+}
+
+function referenceLayoutSignature(template) {
+  const boxes = Object.values(template.visualLayout?.elements || {})
+    .filter((box) => box && box.visible !== false)
+    .map(referenceBoxSignature)
+    .sort();
+  return boxes.length ? boxes.join("\u001f") : "";
+}
+
+function referenceLayoutSimilarity(left, right) {
+  const leftBoxes = Object.values(left.visualLayout?.elements || {}).filter((box) => box?.visible !== false);
+  const rightBoxes = Object.values(right.visualLayout?.elements || {}).filter((box) => box?.visible !== false);
+  if (!leftBoxes.length || !rightBoxes.length) return 0;
+  const pairs = leftBoxes.map((box) => {
+    const candidates = rightBoxes.filter((other) => (other.type || "") === (box.type || "") && (other.binding || "") === (box.binding || ""));
+    if (!candidates.length) return 0;
+    return Math.max(...candidates.map((other) => {
+      const distance = ["x", "y", "w", "h"].reduce((sum, key) => sum + Math.abs(Number(box[key] || 0) - Number(other[key] || 0)), 0) / 400;
+      return Math.max(0, 1 - distance);
+    }));
+  });
+  const coverage = pairs.reduce((sum, score) => sum + score, 0) / Math.max(leftBoxes.length, rightBoxes.length);
+  const countScore = 1 - Math.min(1, Math.abs(leftBoxes.length - rightBoxes.length) / Math.max(leftBoxes.length, rightBoxes.length));
+  return Math.round((coverage * 0.8 + countScore * 0.2) * 100) / 100;
+}
+
+async function compareReferenceLayout(draft) {
+  if (!draft.visualLayout?.elements || draft.analysisMode !== "ai") {
+    return { status: "needs-ai", label: "需视觉分析", message: "当前只有本地基础草稿，不能可靠判断是否为新布局。" };
+  }
+  const state = await loadState();
+  const signature = referenceLayoutSignature(draft);
+  const exact = state.templates.find((template) => referenceLayoutSignature(template) === signature);
+  if (exact) return { status: "existing", label: "已存在", score: 1, template: { number: exact.number, name: exact.name, groups: exact.groups } };
+  const ranked = state.templates.map((template) => ({ template, score: referenceLayoutSimilarity(draft, template) }))
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  if (best?.score >= 0.82) return { status: "similar", label: "相近需确认", score: best.score, template: { number: best.template.number, name: best.template.name, groups: best.template.groups } };
+  return { status: "new", label: "新布局候选", score: best?.score || 0, message: "未发现结构相近的现有模板，可带入编辑器后保存为新模板。" };
 }
 
 async function apiImportReference(body) {
@@ -673,7 +1121,8 @@ JSON格式：
       draft.analysisError = error.message;
     }
   }
-  return { ok: true, savedAs: path.relative(DATA_ROOT, target).replaceAll("\\", "/"), draft };
+  const comparison = await compareReferenceLayout(draft);
+  return { ok: true, savedAs: path.relative(DATA_ROOT, target).replaceAll("\\", "/"), draft, comparison };
 }
 
 async function apiImportTemplateJson(body) {
@@ -687,7 +1136,8 @@ async function apiImportMarketingJson(body) {
     scope: body.scope,
     category: body.category,
     product: body.product,
-  });
+  }, { groups: state.marketingGroups, aliases: state.marketingGroupAliases });
+  const sourceDuplicateCount = entries.importSummary?.skippedDuplicateCount || 0;
   const productNames = new Set(state.products.map((item) => item.name));
   const categories = new Set(state.categories);
   for (const entry of entries) {
@@ -700,7 +1150,7 @@ async function apiImportMarketingJson(body) {
     ...entry,
     duplicate: existingKeys.has([entry.scope, entry.category, entry.product, entry.text].join("\u001f")),
   }));
-  const groups = Object.fromEntries(MARKETING_COPY_GROUPS.map((group) => [
+  const groups = Object.fromEntries(state.marketingGroups.map((group) => [
     group,
     withDuplicates.filter((entry) => entry.group === group).length,
   ]).filter(([, count]) => count));
@@ -709,7 +1159,9 @@ async function apiImportMarketingJson(body) {
     entries: withDuplicates,
     summary: {
       count: entries.length,
-      duplicateCount: withDuplicates.filter((entry) => entry.duplicate).length,
+      duplicateCount: withDuplicates.filter((entry) => entry.duplicate).length + sourceDuplicateCount,
+      sourceDuplicateCount,
+      existingDuplicateCount: withDuplicates.filter((entry) => entry.duplicate).length,
       groups,
     },
   };
@@ -744,9 +1196,15 @@ const server = http.createServer(async (request, response) => {
         "/api/products/add": apiAddProduct,
         "/api/products/move": apiMoveProduct,
         "/api/products/tags": apiSaveTags,
+        "/api/products/rename": apiRenameProduct,
+        "/api/products/merge-images": apiMergeProductImages,
+        "/api/products/merge": apiMergeProducts,
+        "/api/products/analyze-facts": apiAnalyzeProductFacts,
         "/api/templates/save": apiSaveTemplates,
         "/api/marketing/save": apiSaveMarketing,
         "/api/product-marketing/save": apiSaveProductMarketing,
+        "/api/product-marketing/sync-local": apiSyncLocalProductMarketing,
+        "/api/marketing/groups/save": apiSaveMarketingGroups,
         "/api/recycle/restore": apiRestoreRecycle,
         "/api/recycle/purge": apiPurgeRecycle,
         "/api/prompts/generate": apiGeneratePrompts,
